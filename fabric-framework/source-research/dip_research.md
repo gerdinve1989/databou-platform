@@ -1,15 +1,12 @@
 # DIP API-onderzoek
 
-Onderzoek naar **DIP.ExternalApi v1** (Digitaal Informatieplatform Podiumkunsten) voor klant Van Hoorne
-(profiel `fabric-vanhoorne`). DIP draait al in productie voor deze klant: de bestaande connector haalt
-`productions`, `performances`, `theaters` en `sales` op. Dit rapport documenteert de **financiële afspraken**
-(`Financial Agreements`) — een DIP-onderdeel dat we vandaag níet ophalen — en plaatst dat in het geheel van
-de API.
+Onderzoek naar **DIP.ExternalApi v1** (Digitaal Informatieplatform Podiumkunsten). De connector die het
+platform vandaag draait haalt `productions`, `performances`, `theaters` en `sales` op. Dit rapport
+documenteert de **financiële afspraken** (`Financial Agreements`) — een DIP-onderdeel dat daar níet in zit —
+en plaatst dat in het geheel van de API.
 
-**Aanleiding:** de gebruiker heeft een rapportage gebouwd en met Jeroen (Finance) gecontroleerd. Om die
-bruikbaar te maken zijn de gegevens uit het financiële-afspraak-object nodig. Scope is het **volledige
-afspraak-object**, niet alleen de twee percentages: DIP rekent de uitkomst zelf en de rapportage moet
-daarop aansluiten.
+**Aanleiding:** een financiële rapportage heeft het volledige afspraak-object nodig, niet alleen de twee
+percentages: DIP rekent de uitkomst zelf en de rapportage moet daarop aansluiten.
 
 ## Inhoudsopgave
 
@@ -25,7 +22,7 @@ daarop aansluiten.
 | [Rate limits](#rate-limits) | Waargenomen limieten |
 | [Velden en voorbeeld-JSON per entiteit](#velden-en-voorbeeld-json-per-entiteit) | Veldcatalogus en echte samples |
 | [Sleutels en aansluiting op bestaande entiteiten](#sleutels-en-aansluiting-op-bestaande-entiteiten) | Geverifieerde joins |
-| [Ankercase — verificatie](#ankercase--verificatie) | Boeking #44511 veld voor veld |
+| [Ankercase — verificatie](#ankercase--verificatie) | Eén afspraak, veld voor veld |
 | [Belangrijkste datakenmerken per entiteit](#belangrijkste-datakenmerken-per-entiteit) | Sleutels, watermarks, volumes |
 | [Benodigde uitbreidingen aan general-notebooks](#benodigde-uitbreidingen-aan-general-notebooks) | Gevonden hiaten |
 | [Persoonsgegevens](#persoonsgegevens) | Wat het object bevat en wat DIP niet kan onderdrukken |
@@ -37,10 +34,10 @@ daarop aansluiten.
 |---|---|---|
 | 1 | Levert de API financiële afspraken? | **JA.** `GET /contracts` (tag `Financial Agreements`), OAuth2 bearer, **geen paginering** — één platte array van 4.217 records (9,4 MB, 4,9 s). Live opgehaald. |
 | 2 | Komen auteursrechten-% en partage-% als losse velden? | **JA, allebei los.** `properties.royalties_percentage` (12.0) en `properties.partage_percentage` (80.0). Geen berekend totaal — dit zijn de ruwe invoerwaarden. |
-| 3 | Komen de berekeningsvelden mee? | **Deels — en de uitkomsten NIET.** De *invoer* komt mee (`royalties_add_part_percentage` = de 12/112-keuze, `producer_warranty`, `theater_warranty`, `warranty_per_performance` = garantieberekening). Het **recette/netto/verdeling-blok zit NIET in `/contracts`**. Het bestaat wel in de API — `GET /borderellen/{id}` → `calculation` — maar dat endpoint geeft voor Van Hoorne **0 records** terug. Zie [Het berekeningsblok](#het-berekeningsblok--borderellen). |
+| 3 | Komen de berekeningsvelden mee? | **Deels — en de uitkomsten NIET.** De *invoer* komt mee (`royalties_add_part_percentage` = de 12/112-keuze, `producer_warranty`, `theater_warranty`, `warranty_per_performance` = garantieberekening). Het **recette/netto/verdeling-blok zit NIET in `/contracts`**. Het bestaat wel in de API — `GET /borderellen/{id}` → `calculation` — maar dat endpoint geeft voor de geteste credentials **0 records** terug. Zie [Het berekeningsblok](#het-berekeningsblok--borderellen). |
 | 4 | Draagt één afspraak een array `performances`? | **JA.** `performances[]` met `number` + `date`; 1 t/m 6 uitvoeringen per afspraak (1 uitvoering: 3.111 van 4.217). Sleutels: `production.id`, `theater.id`, `performances[].number`. |
 | 5 | Sluiten die sleutels aan op wat we al ophalen? | **JA, 100% waar de bronperiode overlapt.** Theaters 100/100, uitvoeringen 132/132. Eén kanttekening: 492 afspraken (11,7%) verwijzen naar 31 producties uit 2015–2019 die de huidige `productions`-ophaalstap niet teruggeeft. |
-| 6 | Ankercase Boeking #44511 verifieerbaar? | **JA, exact.** Contract `id` 200761: `royalties_percentage` 12.0, `partage_percentage` 80.0, `producer_warranty` 650000 (= € 6.500,00), uitvoering 11484906. Alle schermwaarden gereproduceerd. |
+| 6 | Ankercase (één afspraak, veld voor veld) verifieerbaar? | **JA, exact.** Contract `id` 200761: `royalties_percentage` 12.0, `partage_percentage` 80.0, `producer_warranty` 650000 (= € 6.500,00), uitvoering 11484906. Alle schermwaarden gereproduceerd. |
 
 ## TypeSource
 
@@ -54,16 +51,16 @@ daarop aansluiten.
   (Swagger UI: `https://external-api.dip.nl/index.html`).
 - **Omvang:** 53 paden, 162 schema's, verdeeld over 10 taggroepen.
 - **Bewijsbasis:** dit rapport combineert het gepubliceerde OpenAPI-contract **met live calls** tegen de
-  productie-API op 17-07-2026, met de bestaande DIP-credentials van Van Hoorne uit `VHSSecrets`.
+  productie-API op 17-07-2026, met bestaande DIP-credentials uit de Key Vault van de klant.
   Elk hieronder genoemd type is een **waargenomen** type, tenzij expliciet anders vermeld.
   Waar de spec en de werkelijkheid afwijken, is dat apart genoteerd.
 - **Rechtenmodel:** de `Financial Agreements`-endpoints zijn in de spec beschreven als *"Only for agencies"*.
-  Van Hoorne's credentials passeren die controle voor `/contracts` (agency `AT Next`, id 8), maar **niet**
-  voor `/theaters/fees` — dat geeft `400 {"error_description":"Not an agency"}`. De rechtencontrole is dus
+  Credentials met een agency-rol passeren die controle voor `/contracts`, maar **niet** voor
+  `/theaters/fees` — dat geeft `400 {"error_description":"Not an agency"}`. De rechtencontrole is dus
   per endpoint verschillend; ga er niet vanuit dat toegang tot `/contracts` toegang tot de hele tag betekent.
-- **Scope-afbakening:** alle 4.217 opgehaalde afspraken hebben `producer.id` 137 en `agency.id` 8.
-  `GET /contracts` is dus **al aan de bronkant afgebakend** op Van Hoorne — er is geen filterparameter nodig
-  om andermans afspraken buiten te houden.
+- **Scope-afbakening:** alle 4.217 opgehaalde afspraken droegen dezelfde `producer.id` en `agency.id` —
+  die van de gebruikte credentials. `GET /contracts` is dus **al aan de bronkant afgebakend** op de
+  impresario achter de credentials; er is geen filterparameter nodig om andermans afspraken buiten te houden.
 
 ## Authenticatie
 
@@ -72,11 +69,9 @@ daarop aansluiten.
 - **Token-endpoint:** `https://external-api.dip.nl/token` (POST, `application/x-www-form-urlencoded`)
 - **Scope:** geen — `securitySchemes.oauth2.flows.clientCredentials.scopes` is leeg.
 - **Secretnamen in KeyVault** (alleen namen; waarden zijn nooit gelezen of getoond):
-  - `DIP-ClientId`
-  - `DIP-SecretId`
-  - Vault: `https://VHSSecrets.vault.azure.net/`
-  - **Deze bestaan al en werken** — live geverifieerd, token van 424 tekens verkregen. Er hoeven geen
-    nieuwe credentials te worden aangevraagd. Let op: de namen wijken af van de `{source}-{key}`-conventie.
+  - Een client-id en een client-secret; de exacte namen staan in de clientconfig (sectie 1), niet hier.
+  - **Live geverifieerd** — token van 424 tekens verkregen. Let op bij een bestaande installatie: de namen
+    kunnen afwijken van de `{source}-{key}`-conventie, dus lees ze uit de config in plaats van ze af te leiden.
 - **Waargenomen afwijking van de spec:** de spec declareert in de request body alleen `client_id` en
   `client_secret` — géén `grant_type`. De live call stuurde wél `grant_type=client_credentials` mee en werd
   geaccepteerd. DIP negeert het veld kennelijk. De bestaande connector werkt hiermee in productie.
@@ -99,7 +94,7 @@ per definitie buiten scope (het platform is read-only op bronnen).
 | Entiteit | Endpoint | In scope | Ouder | Notities |
 |---|---|---|---|---|
 | `contracts` | `/contracts` | **JA** | — | Alle afspraken voor de impresario. Optioneel `?modifiedSince=`. Platte array, geen paginering. 4.217 records. |
-| — | `/contracts/{productionNumber}` | Nee | — | Zelfde schema, gefilterd op één productie. Werkt (318 records voor Doornroosje). Alleen nuttig als per-productie ophalen gewenst is; `/contracts` levert alles in één call. |
+| — | `/contracts/{productionNumber}` | Nee | — | Zelfde schema, gefilterd op één productie. Werkt (318 records voor de geteste productie). Alleen nuttig als per-productie ophalen gewenst is; `/contracts` levert alles in één call. |
 | — | `/theaters/fees` | Nee | — | **400 "Not an agency"** — geen toegang met deze credentials. |
 | — | `/theaters/{theaterId}/fees` | Nee | — | Werkt wél (200). Toeslagperiodes per theaterzaal. `fee_periods` was leeg voor theater 19. Buiten scope van dit ticket. |
 | — | `/theater/contacts` | **Nee — bewust niet** | — | Werkt (200), maar bevat **uitsluitend** persoonsgegevens: `theaters[].contacts[].name` + `.email`. Geen enkel niet-persoonlijk veld. Zie [Persoonsgegevens](#persoonsgegevens). |
@@ -110,14 +105,14 @@ per definitie buiten scope (het platform is read-only op bronnen).
 
 | Entiteit | Endpoint | In scope | Ouder | Notities |
 |---|---|---|---|---|
-| — | `/borderellen` | **Nee — leeg** | — | 200 OK, maar `totalItems: 0` voor Van Hoorne. Gepagineerd (`Offset`/`Limit`/`SortColumn`/`SortDirection`). |
+| — | `/borderellen` | **Nee — leeg** | — | 200 OK, maar `totalItems: 0` voor de geteste credentials. Gepagineerd (`Offset`/`Limit`/`SortColumn`/`SortDirection`). |
 | — | `/borderellen/{borderelId}` | **Nee — geen data** | `/borderellen` | Bevat het `calculation`-blok (recette/netto/verdeling). Niet aanroepbaar zonder id's uit de lijst. |
 
 ### Productions & Performances
 
 | Entiteit | Endpoint | In scope | Ouder | Notities |
 |---|---|---|---|---|
-| `productions` | `/producers/{producerId}/productions` | Al actief | — | Huidige config: `producers/137/productions`, `startDate`/`endDate` als vaste params. |
+| `productions` | `/producers/{producerId}/productions` | Al actief | — | Huidige config: `producers/{producerId}/productions`, `startDate`/`endDate` als vaste params. |
 | `performances` | `/producers/{producerId}/productions/{productionNumber}/performances` | Al actief | `productions` | Huidige config: `loop_parent`. |
 | `theaters` | `/theaters` | Al actief | — | 812 records. Bevat genest `theater_locations[]` — dát voedt de bestaande `theater_locations` Silver-stap (verklaart waarom die geen eigen ophaalstap heeft). |
 | — | `/genres`, `/producers` | Nee | — | Referentielijsten. `genre` zit al genest in `productions`. |
@@ -200,17 +195,17 @@ is aan config-builder.
 |---|---|---|---|
 | `id` | IntegerType | Nee | **Uniek over alle 4.217 records** (geverifieerd). De technische sleutel van de afspraak. |
 | `type` | StringType | Ja | Waargenomen waarden: `partage` (3.871), `buyout` (285), `volume` (58), `suppletion` (3). Stuurt de inhoud van `properties`. |
-| `name` | StringType | Ja | "kenmerk eigen systeem" in de UI, bv. `"Boeking #44511"`. **Niet uniek** — zie de opmerking over versies hieronder. |
+| `name` | StringType | Ja | "kenmerk eigen systeem" in de UI, bv. `"Boeking #<nr>"`. **Niet uniek** — zie de opmerking over versies hieronder. |
 | `status` | StringType | Ja | Waargenomen: `approved` (2.028), `concept` (1.119), `proposed` (924), `rejected` (128), `revised-in-pki` (17), `revised` (1). |
 | `reject_reason` | StringType | Ja | Vaak `""`. Gevuld bij 127 records. Vrije tekst. |
 | `modified` | TimestampType | Nee | Bereik: `2015-12-29T10:25:45` t/m `2026-06-29T17:05:16.797`. Geen tijdzone-aanduiding. Voedt `modifiedSince`. |
 | `contact_theater` | StringType | Ja | **PERSOONSGEGEVEN** — bevat een e-mailadres. Zie [Persoonsgegevens](#persoonsgegevens). |
 | `contact_producer` | StringType | Ja | **PERSOONSGEGEVEN** — bevat een e-mailadres. |
 | `agencyAsProvider` | BooleanType | Nee | `True` bij 1.736, `False` bij 2.481. |
-| `agency` | StructType | Nee | `{id: int, name: string}`. Altijd id 8 (`AT Next`). |
-| `producer` | StructType | Nee | `{id: int, name: string, type: string}`. Altijd id 137. |
+| `agency` | StructType | Nee | `{id: int, name: string}`. Constant binnen één credentialset — het agentschap van de credentials. |
+| `producer` | StructType | Nee | `{id: int, name: string, type: string}`. Constant binnen één credentialset — de producent van de credentials. |
 | `theater` | StructType | Nee | `{id: int, name: string}` — de afnemer. 100 verschillende theaters. |
-| `production` | StructType | Nee | `{id: string, title: string}`. `id` is de DIP-productiecode, bv. `NL-25-137-3538442`. Nooit leeg. |
+| `production` | StructType | Nee | `{id: string, title: string}`. `id` is de DIP-productiecode, bv. `NL-{jj}-{producerId}-{nr}`. Nooit leeg. |
 | `first_date` | TimestampType | Nee | Datum van de eerste uitvoering onder de afspraak. |
 | `performances` | ArrayType(Struct) | Ja | `[{number: int, date: timestamp}]`. **Nooit leeg** op 4.217 records. Lengte 1 (3.111), 2 (871), 3 (81), 4 (144), 5 (9), 6 (1). |
 | `properties` | StructType | Ja | **Polymorf** — `oneOf` over 5 varianten, gestuurd door `type`. Zie hieronder. |
@@ -268,23 +263,23 @@ Type-specifieke velden:
 > bevestigt hem niet in het contract. Wij hebben één waarneming (`true` ↔ `12/112`); een tegenvoorbeeld met
 > `false` is niet tegen de UI gecontroleerd.
 
-**Voorbeeld-JSON (`contracts`) — echte response, ankercase Boeking #44511, persoonsgegevens geredigeerd:**
+**Voorbeeld-JSON (`contracts`) — echte response, ankercase Boeking #<nr>, persoonsgegevens geredigeerd:**
 
 ```json
 {
   "id": 200761,
   "type": "partage",
-  "name": "Boeking #44511",
+  "name": "Boeking #<nr>",
   "status": "approved",
   "reject_reason": "",
   "modified": "2026-03-10T16:25:36.933",
   "contact_theater": "REDACTED",
   "contact_producer": "REDACTED",
   "agencyAsProvider": true,
-  "agency": { "id": 8, "name": "AT Next" },
-  "producer": { "id": 137, "name": "Van Hoorne Entertainment B.V.", "type": "Producent" },
-  "theater": { "id": 19, "name": "Stichting Theater & Bioscoop de Nieuwe Kolk" },
-  "production": { "id": "NL-25-137-3538442", "title": "Doornroosje De Musical" },
+  "agency": { "id": 0, "name": "REDACTED" },
+  "producer": { "id": 0, "name": "REDACTED", "type": "Producent" },
+  "theater": { "id": 0, "name": "REDACTED" },
+  "production": { "id": "NL-{jj}-{producerId}-{nr}", "title": "REDACTED" },
   "first_date": "2026-05-10T15:00:00",
   "performances": [
     { "number": 11484906, "date": "2026-05-10T15:00:00" }
@@ -452,15 +447,15 @@ waarneming**.
 > ooit op bouwt, moet uitgaan van de waarneming, niet van de spec.
 
 **Waarom leeg is UNKNOWN.** Twee plausibele verklaringen, geen van beide geverifieerd:
-1. Een borderel is de theaterzijdige afrekening; Van Hoorne is producent/impresariaat en heeft mogelijk
+1. Een borderel is de theaterzijdige afrekening; een producent/impresariaat heeft mogelijk
    geen borderellen in DIP.
 2. Een rechtenfilter geeft stil 0 records in plaats van een 403 — vergelijkbaar met de
    `400 "Not an agency"` op `/theaters/fees`, maar dan zonder foutmelding.
 
-**Antwoord op kernvraag 3, expliciet: NEE.** DIP levert de door hem berekende uitkomsten vandaag **niet** aan
-Van Hoorne via de API. Wie de recette/netto/verdeling in de rapportage wil, moet die **zelf narekenen** uit
+**Antwoord op kernvraag 3, expliciet: NEE.** DIP levert de door hem berekende uitkomsten vandaag **niet**
+via de API. Wie de recette/netto/verdeling in de rapportage wil, moet die **zelf narekenen** uit
 de invoerwaarden uit `/contracts` gecombineerd met de verkoopgegevens uit `sales` — met het risico dat de
-uitkomst afwijkt van wat DIP op het scherm toont, precies wat de gebruiker wilde vermijden.
+uitkomst afwijkt van wat DIP op het scherm toont — precies wat een financiële rapportage wil vermijden.
 
 **Alternatieven, in volgorde van voorkeur — beslissing aan de gebruiker, niet aan mij:**
 1. **Vraag DIP-support** waarom `/borderellen` leeg is en of het voor een producent/impresariaat gevuld
@@ -479,11 +474,11 @@ Geverifieerd met live data uit beide endpoints — dit is meting, geen aanname:
 
 | Sleutel in `contracts` | Sluit aan op | Resultaat |
 |---|---|---|
-| `production.id` (`"NL-25-137-3538442"`) | `productions.id` | **Exact gelijk formaat.** 53 van de 84 producties in afspraken matchen. Zie de kanttekening hieronder. |
+| `production.id` (`"NL-{jj}-{producerId}-{nr}"`) | `productions.id` | **Exact gelijk formaat.** 53 van de 84 producties in afspraken matchen. Zie de kanttekening hieronder. |
 | `theater.id` (`19`) | `theaters.id` | **100 van de 100** verschillende theater-id's matchen. Foutloos. |
-| `performances[].number` (`11484906`) | `performances.id` **én** `performances.number` | **132 van de 132** matchen voor Doornroosje. In de `performances`-entiteit zijn `id` en `number` op elk record identiek. |
-| `producer.id` (`137`) | het `producerId` in de bestaande `url_path` | Constant 137 op alle 4.217 records. |
-| `agency.id` (`8`) | — | Constant 8 (`AT Next`). Geen bestaande entiteit. |
+| `performances[].number` (`11484906`) | `performances.id` **én** `performances.number` | **132 van de 132** matchen voor de geteste productie. In de `performances`-entiteit zijn `id` en `number` op elk record identiek. |
+| `producer.id` | het `producerId` in de bestaande `url_path` | Constant op alle 4.217 records — de producent van de credentials. |
+| `agency.id` | — | Constant binnen één credentialset. Geen bestaande entiteit. |
 
 > **Kanttekening bij `production.id` — een echt gat.** 492 van de 4.217 afspraken (11,7%) verwijzen naar
 > **31 producties uit 2015–2019** die de huidige `productions`-ophaalstap **niet teruggeeft**. Oorzaak: de
@@ -492,7 +487,7 @@ Geverifieerd met live data uit beide endpoints — dit is meting, geen aanname:
 > waarneming, geen voorstel — wat ermee moet gebeuren (bronperiode verruimen, of afspraken beperken tot
 > 2020+) is een keuze voor config-builder en de gebruiker.
 
-> **Versies van dezelfde afspraak.** De ankercase levert **drie** records met `name` = `"Boeking #44511"`:
+> **Versies van dezelfde afspraak.** De ankercase levert **drie** records met `name` = `"Boeking #<nr>"`:
 > `id` 200761 (`approved`, `parentId` 0, `childIds` [200762, 231775]), `id` 200762 (`concept`,
 > `parentId` 200761) en `id` 231775 (`proposed`, `parentId` 200761). Alle drie dragen dezelfde
 > uitvoering 11484906 en dezelfde percentages. De ouder/kind-keten via `parentId`/`childIds` draagt dus de
@@ -506,11 +501,11 @@ Geverifieerd met live data uit beide endpoints — dit is meting, geen aanname:
 
 | Scherm (DIP-UI) | Schermwaarde | API-veld | API-waarde | ✓ |
 |---|---|---|---|:-:|
-| kenmerk eigen systeem | Boeking #44511 | `name` | `"Boeking #44511"` | ✅ |
+| kenmerk eigen systeem | Boeking #<nr> | `name` | `"Boeking #<nr>"` | ✅ |
 | type afspraak | Partage | `type` | `"partage"` | ✅ |
-| aanbieder | AT Next namens Van Hoorne Entertainment B.V. | `agency.name` + `producer.name` + `agencyAsProvider` | `"AT Next"` + `"Van Hoorne Entertainment B.V."` + `true` | ✅ |
-| afnemer | Stichting Theater & Bioscoop de Nieuwe Kolk | `theater.name` | idem | ✅ |
-| productie | Doornroosje De Musical | `production.title` | idem (`production.id` = `NL-25-137-3538442`) | ✅ |
+| aanbieder | agentschap namens producent | `agency.name` + `producer.name` + `agencyAsProvider` | beide namen letterlijk + `true` | ✅ |
+| afnemer | de theaterorganisatie | `theater.name` | idem | ✅ |
+| productie | de producttitel | `production.title` | idem (`production.id` = `NL-{jj}-{producerId}-{nr}`) | ✅ |
 | uitvoeringen | 11484906 / 10-05-2026 15:00 (Grote zaal) | `performances[0].number` + `.date` | `11484906` + `"2026-05-10T15:00:00"` | ✅ |
 | — zaal "Grote zaal" | — | **niet in `/contracts`** | via `performances.theater_location.name` (id 19) | ⚠️ |
 | **auteursrechten** | **12.00%** | `properties.royalties_percentage` | `12.0` | ✅ |
@@ -591,8 +586,8 @@ e-mailadres. Namen + e-mail samen staan in `/theater/contacts`, dat om die reden
 
 **Wat er in dit rapport is gedaan:** in elke sample zijn `contact_theater`, `contact_producer` en
 `remarks` vervangen door `"REDACTED"`. **Sleutel en type blijven staan**, zodat het schema afleidbaar
-blijft. Organisatienamen (`AT Next`, `Van Hoorne Entertainment B.V.`, het theater) zijn **niet** geredigeerd:
-dat zijn rechtspersonen, geen personen. Er is één record per variant opgenomen, geen pagina.
+blijft. Organisatienamen (agentschap, producent, theater) zijn eveneens vervangen: het zijn geen persoonsgegevens,
+maar ze maken het rapport wél klantspecifiek, en de platformkopie wordt door elke klant gelezen. Er is één record per variant opgenomen, geen pagina.
 
 **Voor de ingestie:** omdat de bron niets kan onderdrukken, komen deze velden hoe dan ook in Bronze binnen
 zodra `contracts` wordt opgehaald. Of ze naar Silver mogen, en zo ja hoe, is een keuze voor config-builder
@@ -612,10 +607,10 @@ en de gebruiker — niet voor dit rapport. Ik signaleer alleen dat de keuze onve
 | 8 | `/theaters/fees` → `400 "Not an agency"` terwijl `/contracts` wél werkt | Rechtenmodel per endpoint verschillend en niet gedocumenteerd. Buiten scope van dit ticket; relevant zodra iemand toeslagperiodes wil. |
 | 9 | verkoopmonitor / verkoopmutaties / publieksmonitor | **UNKNOWN** of de sales-endpoints de monitors 1-op-1 dekken; voor publieksmonitor is **geen** endpoint gevonden. Zie het [entiteitenoverzicht](#de-dip-menu-items-uit-de-ui-afgezet-tegen-de-api). |
 | 10 | Test-/acceptatie-omgeving | **Niet gevonden.** Alle onderzoek is tegen productie gedaan (read-only). |
-| 11 | `allow_new_connectors` staat op `false` voor `fabric-vanhoorne` | Geen blokkade voor dít onderzoek: DIP is een **bestaande** connector, dit betreft een entiteitsuitbreiding, geen nieuwe bron. Gesignaleerd voor config-builder. |
+| 11 | `allow_new_connectors` kan op `false` staan voor de klant | Geen blokkade voor dít onderzoek: DIP is een **bestaande** connector, dit betreft een entiteitsuitbreiding, geen nieuwe bron. Gesignaleerd voor config-builder. |
 
 ---
 
 **Onderzoek uitgevoerd:** 17-07-2026 · **Bewijs:** OpenAPI-contract `https://external-api.dip.nl/swagger/v1/swagger.json`
-+ live `GET`-calls tegen productie met de bestaande credentials uit `VHSSecrets` (`DIP-ClientId` / `DIP-SecretId`).
++ live `GET`-calls tegen productie met bestaande DIP-credentials uit de Key Vault van de klant.
 Er zijn uitsluitend leesacties uitgevoerd; er is geen enkele schrijfactie tegen DIP gedaan.
