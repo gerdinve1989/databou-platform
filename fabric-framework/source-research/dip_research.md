@@ -1,12 +1,14 @@
 # DIP API-onderzoek
 
-Onderzoek naar **DIP.ExternalApi v1** (Digitaal Informatieplatform Podiumkunsten). De connector die het
-platform vandaag draait haalt `productions`, `performances`, `theaters` en `sales` op. Dit rapport
-documenteert de **financiële afspraken** (`Financial Agreements`) — een DIP-onderdeel dat daar níet in zit —
-en plaatst dat in het geheel van de API.
+Onderzoek naar **DIP.ExternalApi v1** (Digitaal Informatieplatform Podiumkunsten). Dit rapport documenteert
+de vijf entiteiten die een DIP-connector ophaalt — `productions`, `performances`, `theaters`, `sales` en de
+**financiële afspraken** (`contracts`) — en plaatst ze in het geheel van de API.
 
-**Aanleiding:** een financiële rapportage heeft het volledige afspraak-object nodig, niet alleen de twee
-percentages: DIP rekent de uitkomst zelf en de rapportage moet daarop aansluiten.
+**Aanleiding en opbouw.** Het rapport begon bij één vraag: een financiële rapportage heeft het volledige
+afspraak-object nodig, niet alleen de twee percentages, want DIP rekent de uitkomst zelf en de rapportage moet
+daarop aansluiten. Dat deel is uitgewerkt op **17-07-2026**. De vier overige entiteiten stonden er toen alleen
+als endpoint in; ze zijn op **25-08-2026** alsnog live gemeten. Het rapport is daarmee op zichzelf voldoende om
+een volledige DIP-connector te bouwen, zonder een bestaande installatie te hoeven raadplegen.
 
 ## Inhoudsopgave
 
@@ -18,9 +20,9 @@ percentages: DIP rekent de uitkomst zelf en de rapportage moet daarop aansluiten
 | [Authenticatie](#authenticatie) | OAuth2 client_credentials, secretnamen |
 | [Verbinding](#verbinding) | BaseUrl, rate-limit-vertraging, headers |
 | [Entiteitenoverzicht](#entiteitenoverzicht) | Alle 53 endpoints, binnen en buiten scope |
-| [Paginering en ingestie per entiteit](#paginering-en-ingestie-per-entiteit) | Strategie en waarden per entiteit |
+| [Paginering en ingestie per entiteit](#paginering-en-ingestie-per-entiteit) | Strategie en waarden per entiteit — alle vijf |
 | [Rate limits](#rate-limits) | Waargenomen limieten |
-| [Velden en voorbeeld-JSON per entiteit](#velden-en-voorbeeld-json-per-entiteit) | Veldcatalogus en echte samples |
+| [Velden en voorbeeld-JSON per entiteit](#velden-en-voorbeeld-json-per-entiteit) | Veldcatalogus en echte samples — alle vijf |
 | [Sleutels en aansluiting op bestaande entiteiten](#sleutels-en-aansluiting-op-bestaande-entiteiten) | Geverifieerde joins |
 | [Ankercase — verificatie](#ankercase--verificatie) | Eén afspraak, veld voor veld |
 | [Belangrijkste datakenmerken per entiteit](#belangrijkste-datakenmerken-per-entiteit) | Sleutels, watermarks, volumes |
@@ -112,9 +114,9 @@ per definitie buiten scope (het platform is read-only op bronnen).
 
 | Entiteit | Endpoint | In scope | Ouder | Notities |
 |---|---|---|---|---|
-| `productions` | `/producers/{producerId}/productions` | Al actief | — | Huidige config: `producers/{producerId}/productions`, `startDate`/`endDate` als vaste params. |
-| `performances` | `/producers/{producerId}/productions/{productionNumber}/performances` | Al actief | `productions` | Huidige config: `loop_parent`. |
-| `theaters` | `/theaters` | Al actief | — | 812 records. Bevat genest `theater_locations[]` — dát voedt de bestaande `theater_locations` Silver-stap (verklaart waarom die geen eigen ophaalstap heeft). |
+| `productions` | `/producers/{producerId}/productions` | **JA** | — | `startDate`/`endDate` optioneel (`date-time`). Zónder venster geeft DIP alleen het lopende seizoen: **6 records tegen 101** over 2015–2026. Platte array, geen paginering. |
+| `performances` | `/producers/{producerId}/productions/{productionNumber}/performances` | **JA** | `productions` | `loop_parent`. **Geen query-parameters** — de spec kent alleen padparameters. Platte array. |
+| `theaters` | `/theaters` | **JA** | — | **819 records** (812 op 17-07-2026). **Nul parameters in de spec.** Bevat genest `theater_locations[]` — 2.862 locaties met globaal unieke id's — dát voedt de `theater_locations` Silver-stap en verklaart waarom die geen eigen ophaalstap heeft. |
 | — | `/genres`, `/producers` | Nee | — | Referentielijsten. `genre` zit al genest in `productions`. |
 | — | `/producers/{producerId}/theaters/{theaterId}/performances`, `/theaters/{theaterId}/performances` | Nee | — | Alternatieve ingangen op dezelfde uitvoeringen. |
 
@@ -122,7 +124,7 @@ per definitie buiten scope (het platform is read-only op bronnen).
 
 | Entiteit | Endpoint | In scope | Ouder | Notities |
 |---|---|---|---|---|
-| `sales` | `/productions/{productionNumber}/sales` | Al actief | `productions` | Huidige config: `loop_parent`. |
+| `sales` | `/productions/{productionNumber}/sales` | **JA** | `productions` | `loop_parent`. Geen query-parameters. **`id` is het theater-id, niet een verkoop-id**, en het endpoint geeft **HTTP 400** in plaats van een lege array bij een productie zonder verkoop. Zie [sales](#sales). |
 | — | `/productions/{productionNumber}/theaters/{theaterId}/sales`, `/performances/{performanceId}/sales` | Nee | — | Fijnere ingangen op dezelfde verkopen. |
 | — | `/productions/{productionNumber}/reservations` | Nee | — | **Reserveringen — bestaat.** Mogelijke vervolgvraag. |
 | — | `/productions/{productionNumber}/blockedseats` | Nee | — | **Geblokkeerde stoelen — bestaat.** Mogelijke vervolgvraag. |
@@ -174,6 +176,79 @@ zijn huidige vorm geen `date`-watermark op zetten (zie
 [Benodigde uitbreidingen](#benodigde-uitbreidingen-aan-general-notebooks)). Dat is **geen blokkade**: een
 volledige ophaal is 9,4 MB in 4,9 s en dus prima dagelijks te draaien. De keuze tussen vol en incrementeel
 is aan config-builder.
+
+### productions
+
+- **Strategy:** `single`
+- **WatermarkType:** `none` — de API kent geen last-modified-veld en geen `modifiedSince` op dit endpoint.
+- **UrlPath:** `producers/{producerId}/productions`
+- **ExtraParams:** `startDate` + `endDate` (beide `date-time`, beide **optioneel** volgens de spec).
+- **Output.RecordKey:** `None` — kale JSON-array op topniveau.
+- **Output.RecordType:** `list`
+- **StrategyDetails:** `{}` — geen pagineringsparameters; de spec kent er geen.
+- **Extraction.BatchSize / MaxTotalRecords:** n.v.t. / n.v.t.
+
+> **Het venster bepaalt de volledigheid, niet de paginering.** Zónder `startDate`/`endDate` geeft DIP
+> **6 producties** terug — het lopende seizoen. Met `startDate=2015-01-01&endDate=2026-12-31` zijn het er
+> **101**, verdeeld over 13 seizoenen (2014-2015 t/m 2026-2027). Dit is dezelfde oorzaak als de kanttekening
+> bij [`production.id`](#sleutels-en-aansluiting-op-bestaande-entiteiten): een te smal venster laat afspraken
+> zonder productie achter. De keuze van het venster is aan config-builder; de meting is dat het venster het
+> enige is dat het volume stuurt.
+
+### performances
+
+- **Strategy:** `loop_parent` — ouder is `productions`
+- **WatermarkType:** `none`
+- **UrlPath:** `None` (verplicht bij `loop_parent`; het pad komt uit `UrlPathTemplate`)
+- **LoopParent:** `ParentEntity: "productions"`, `UrlPathTemplate:
+  "producers/{producerId}/productions/{productionNumber}/performances"`, `ParentIdField: "id"`,
+  `InjectField:` de kolom die het productie-id op elk kindrecord zet.
+- **ExtraParams:** geen — **de spec kent op dit endpoint uitsluitend padparameters** (`producerId`,
+  `productionNumber`). Er is niets te filteren en niets te pagineren.
+- **Output.RecordKey:** `None` · **Output.RecordType:** `list`
+- **Aantal calls:** één per productie — met een venster van 2015–2026 dus 101 calls per run.
+
+> **`InjectField` is hier optioneel maar nuttig, niet noodzakelijk:** elk uitvoeringsrecord draagt zelf al
+> `production.id`. Bij `sales` ligt dat anders — zie hieronder.
+
+### theaters
+
+- **Strategy:** `single`
+- **WatermarkType:** `none`
+- **UrlPath:** `theaters`
+- **ExtraParams:** geen — **de spec declareert nul parameters op dit endpoint.** Alles of niets.
+- **Output.RecordKey:** `None` · **Output.RecordType:** `list`
+- **StrategyDetails:** `{}`
+- **Volume:** 819 records / 276 KB in één response.
+
+### sales
+
+- **Strategy:** `loop_parent` — ouder is `productions`
+- **WatermarkType:** `none` — er is een `updated`-veld op elk record, maar **geen enkele parameter om erop te
+  filteren**. Incrementeel ophalen is op dit endpoint niet mogelijk.
+- **UrlPath:** `None` · **UrlPathTemplate:** `productions/{productionNumber}/sales`
+- **LoopParent:** `ParentEntity: "productions"`, `ParentIdField: "id"`, **`InjectField` is hier verplicht** —
+  zie de waarschuwing hieronder.
+- **ExtraParams:** geen — alleen de padparameter `productionNumber`.
+- **Output.RecordKey:** `None` · **Output.RecordType:** `list`
+
+> **`InjectField` is bij `sales` niet optioneel.** Het `id`-veld op een verkooprecord is **het theater-id**,
+> niet een verkoop-id: over twee producties gaf de API 140 rijen met slechts **77 unieke `id`-waarden**, en
+> `name` kwam **140 van de 140 keer** exact overeen met `theaters.name`. De korrel is (productie × theater) en
+> het productie-id staat **nergens in de payload** — het bestaat alleen als de loop-parameter. Zonder
+> `InjectField` is de rij niet uniek te maken en botst elke PK die op `id` alleen steunt.
+
+> **`/productions/{n}/sales` geeft HTTP 400 bij een productie zonder verkoopgeschiedenis**, niet een lege
+> array:
+> ```
+> HTTP 400  {"error":"Invalid response",
+>            "error_description":"No sales history for production NL-{jj}-{producerId}-{nr}"}
+> ```
+> In een steekproef van 10 producties over 13 seizoenen overkwam dit er **1**. Bij een loop over de volledige
+> historie is dit dus normaal gedrag, geen incident. **Geen blokkade:** `ParentLoopExtractor` vangt elke
+> mislukte child-call af als `logger.warning` en gaat door met de volgende ouder
+> (`notebook_Config_API.py:2219-2220`). Wat je ervoor terugkrijgt staat in
+> [Benodigde uitbreidingen](#benodigde-uitbreidingen-aan-general-notebooks).
 
 ## Rate limits
 
@@ -468,6 +543,75 @@ uitkomst afwijkt van wat DIP op het scherm toont — precies wat een financiële
 3. **Alleen de invoerwaarden ontsluiten** en het narekenen niet doen. Levert de rapportage de percentages en
    garanties, maar niet de aansluiting op DIP's totaal — wat expliciet de wens was.
 
+### productions
+
+Gemeten op 101 records (venster 2015-01-01 t/m 2026-12-31). Geen enkel veld was `null`.
+
+| Veld | Type | Waarneming |
+|---|---|---|
+| `id` | str | **101/101 uniek.** Formaat `NL-{jj}-{producerId}-{nr}` — hetzelfde formaat als `contracts.production.id`. Let op: `{nr}` is niet uniform (`00279` naast `3776864`), dus behandel het als een string, nooit als een getal. |
+| `title` | str | 60 verschillende titels op 101 producties — een titel keert terug per seizoen. **Niet bruikbaar als sleutel.** |
+| `startDate` | str (date-time) | Slechts **14 verschillende waarden op 101 records**: dit is de startdatum van het *seizoen*, niet van de productie. Geen last-modified-veld. |
+| `season` | str | 13 waarden, `2014-2015` t/m `2026-2027`. |
+| `genre` | object | `{id: int, name: str}`. Genest, altijd gevuld — `/genres` als losse ophaalstap is daarmee overbodig. |
+| `producer` | object | `{id: int, name: str, type: str}`. Constant op alle records: de producent van de gebruikte credentials. |
+| `co_producers` | array | **Leeg in 101/101.** Elementtype niet waargenomen. |
+| `accompanied_by_producers` | array | **Leeg in 101/101.** Elementtype niet waargenomen. |
+| `cast_members` | array | **Leeg in 101/101.** Elementtype niet waargenomen — zie [Persoonsgegevens](#persoonsgegevens). |
+
+### performances
+
+Gemeten op 267 records over twee producties.
+
+| Veld | Type | Waarneming |
+|---|---|---|
+| `id` | int | **267/267 uniek.** |
+| `number` | int | **267/267 uniek** en op elk record **gelijk aan `id`**. Dit is het veld waarop `contracts.performances[].number` aansluit. |
+| `date` | str (date-time) | 267 verschillende waarden, bereik 2025-08-30 t/m 2027-06-27. Geen tijdzone-aanduiding. |
+| `status` | str | 2 waarden: `agreed`, `cancellation`. |
+| `type` | str | 3 waarden: `normal`, `premiere`, `tryout`. |
+| `private` | bool | **`false` in 267/267.** Geen variatie waargenomen. |
+| `in_festival` | bool | **`false` in 267/267.** Geen variatie waargenomen. |
+| `isOtherLocation` | bool | **`false` in 267/267.** Let op de **camelCase** — het enige veld in de hele API dat afwijkt van `snake_case`. |
+| `amount_rank1` | int | Gevuld op elk record, bereik 299–1.559. Capaciteit per rang. |
+| `amount_rank2` … `amount_rank10` | int | **0 in 267/267 records, alle negen.** Gedeclareerd, nooit gevuld. Of ze bij een andere producent wél vullen is **UNKNOWN**. |
+| `production` | object | `{id: str, title: str, genre: object}` — het productie-id staat dus al op het kindrecord. |
+| `theater` | object | `{id: int, name: str}`. |
+| `theater_location` | object | `{id: int, name: str}`. **Nooit `null`** in de meting. |
+| `forms` | array | **Leeg in 267/267.** Elementtype niet waargenomen. |
+
+### theaters
+
+Gemeten op de volledige respons: 819 records.
+
+| Veld | Type | Waarneming |
+|---|---|---|
+| `id` | int | **819/819 uniek.** |
+| `name` | str | 819 verschillende waarden. |
+| `street`, `number`, `zipcode`, `city` | str | Adres van het theater. Altijd gevuld, nooit `null`. |
+| `province` | object | `{id: int, name: str}` — genest, waardoor `/provinces` als losse ophaalstap overbodig is. |
+| `type` | str | 3 waarden: `Theater`, `Festival`, `Other`. |
+| `dip_member` | bool | 162 van de 819 op `true`. |
+| `theater_locations` | array van `{id: int, name: str}` | **2.862 locaties in totaal, alle 2.862 id's globaal uniek.** Leeg bij 18 van de 819 theaters. Dit is de voedingsbron voor een aparte `theater_locations` Silver-tabel: de locaties hebben geen eigen endpoint. |
+
+### sales
+
+Gemeten op 140 records over twee producties.
+
+| Veld | Type | Waarneming |
+|---|---|---|
+| `id` | int | **NIET uniek — dit is het theater-id.** 77 unieke waarden op 140 rijen; zie de waarschuwing bij [sales](#sales). |
+| `name` | str | **140/140 exact gelijk aan `theaters.name`** bij het bijbehorende `id`. Bevestigt dat `id` een theaterverwijzing is. |
+| `updated` | str (date-time) | 135 verschillende waarden. Er is **geen parameter om hierop te filteren** — het veld is bruikbaar in Silver, niet voor incrementeel ophalen. |
+| `tickets` | int | Aantal verkochte kaarten, geaggregeerd over de uitvoeringen in dit theater. |
+| `recette` | int | **In centen** — `recette / tickets` geeft een mediaan van €28,41 per kaart over 139 rijen. Consistent met `contracts.producer_warranty`. |
+| `performances` | array van `{number, date, tickets, recette, updated}` | 1 t/m 4 elementen per rij, 261 in totaal. **De som klopt exact:** `som(performances[].tickets) == tickets` en `som(performances[].recette) == recette` in **140 van de 140** rijen. |
+
+> **Twee korrels, beide geldig.** De bovenliggende rij is een zuivere aggregatie van de geneste array. Wie op
+> uitvoeringsniveau wil rapporteren, exploded `performances[]` en sluit via `number` aan op
+> `performances.number`. Wie op theaterniveau wil rapporteren, gebruikt de bovenliggende rij zoals hij is.
+> Welke van de twee de Silver-tabel wordt — of allebei — is een beslissing voor config-builder.
+
 ## Sleutels en aansluiting op bestaande entiteiten
 
 Geverifieerd met live data uit beide endpoints — dit is meting, geen aanname:
@@ -494,6 +638,25 @@ Geverifieerd met live data uit beide endpoints — dit is meting, geen aanname:
 > **versiegeschiedenis** van één boeking. `id` is uniek; `name` is dat niet. Wat dit betekent voor filtering
 > op `status` of voor de korrel is expliciet **niet mijn beslissing** — ik documenteer dat de structuur
 > bestaat.
+
+### Sleutels tussen de vier basisentiteiten onderling
+
+Gemeten op 267 uitvoeringen, 140 verkooprijen, 101 producties en de volledige theaterlijst van 819 records.
+
+| Sleutel | Sluit aan op | Resultaat |
+|---|---|---|
+| `performances.production.id` | `productions.id` | Formaat identiek (`NL-{jj}-{producerId}-{nr}`); het kindrecord draagt het ouder-id zelf. |
+| `performances.theater.id` | `theaters.id` | **267 van de 267.** Foutloos. |
+| `performances.theater_location.id` | `theaters.theater_locations[].id` | **267 van de 267.** Foutloos, en de 2.862 locatie-id's zijn globaal uniek — de locatie is dus zonder het theater-id te identificeren. |
+| `sales.id` | `theaters.id` | **140 van de 140**, met `sales.name` == `theaters.name` als extra bevestiging. |
+| `sales.performances[].number` | `performances.number` (== `performances.id`) | Zelfde nummerruimte als `contracts.performances[].number`. |
+| productie-id op `sales` | `productions.id` | **Bestaat niet in de payload.** Alleen beschikbaar via `LoopParent.InjectField`. |
+
+> **De volledige sleutelketen.** `contracts` → `productions` (via `production.id`), `contracts` →
+> `theaters` (via `theater.id`), `contracts` → `performances` (via `performances[].number`). En daarnaast
+> `performances` → `productions`/`theaters`/`theater_locations`, en `sales` → `theaters` + (geïnjecteerd)
+> `productions`. Alle zes de gemeten joins halen 100% binnen de waargenomen periode; de enige gaten zijn de
+> 492 afspraken naar producties buiten het ophaalvenster, hierboven beschreven.
 
 ## Ankercase — verificatie
 
@@ -547,11 +710,70 @@ berekeningsinvoer zijn reproduceerbaar uit de API. Twee kanttekeningen:
 - **Kandidaat-partitiekolom:** geen. 4.217 records rechtvaardigen geen partitionering. Als het ooit moet:
   `production.id` (84 waarden) of het jaar uit `first_date`.
 
+### productions
+
+- **Natuurlijke primaire sleutel:** `id` — 101/101 uniek. `title` is **niet** uniek (60 waarden op 101 records).
+- **Last-modified / update-timestamp:** **geen.** `startDate` is een seizoensdatum, geen recordtijdstempel.
+- **Ondersteunt de API incrementeel ophalen?** **Nee.** `startDate`/`endDate` filteren op de *productie*periode,
+  niet op wijzigingsmoment. Een run met een vast venster haalt elke keer dezelfde set opnieuw op.
+- **Geeft de API updates op bestaande records?** **UNKNOWN** — zonder tijdstempel is dat niet waarneembaar.
+- **Volledige periode nodig voor delete-detectie?** **Ja** — dit is sowieso een volledige ophaal.
+- **Datavolume:** **101 records / 30 KB** over 2015–2026, in één response. Groei: ca. 6–10 producties per seizoen.
+- **Kandidaat-partitiekolom:** geen. `season` (13 waarden) als het ooit moet.
+
+### performances
+
+- **Natuurlijke primaire sleutel:** `id` — 267/267 uniek. `number` is even uniek en op elk record gelijk aan `id`;
+  gebruik `number` als de join-sleutel richting `contracts`, want dát is het veld dat `contracts` noemt.
+- **Last-modified / update-timestamp:** **geen.** `date` is de speeldatum.
+- **Ondersteunt de API incrementeel ophalen?** **Nee** — het endpoint kent uitsluitend padparameters.
+- **Geeft de API updates op bestaande records?** **Waarschijnlijk ja** — `status` kent `cancellation`, wat een
+  levenscyclus impliceert. Niet direct waarneembaar zonder tijdstempel.
+- **Volledige periode nodig voor delete-detectie?** **Ja.**
+- **Datavolume:** steekproef van 10 producties over 13 seizoenen gaf **264 rijen / 217 KB**, gemiddeld 26 per
+  productie (min 1, max 93). **Extrapolatie: ~2.700 rijen / ~2,1 MB** over 101 producties. Dit is een schatting
+  uit een steekproef van 10, geen telling.
+- **Kandidaat-partitiekolom:** het geïnjecteerde of geneste productie-id, als het volume ooit groeit.
+
+### theaters
+
+- **Natuurlijke primaire sleutel:** `id` — 819/819 uniek. Voor de geneste locaties:
+  `theater_locations[].id`, 2.862/2.862 globaal uniek.
+- **Last-modified / update-timestamp:** **geen.**
+- **Ondersteunt de API incrementeel ophalen?** **Nee** — het endpoint declareert nul parameters.
+- **Geeft de API updates op bestaande records?** **Waarschijnlijk** (adressen, lidmaatschap). Niet waarneembaar.
+- **Volledige periode nodig voor delete-detectie?** **Ja** — één volledige ophaal per run, en die is goedkoop.
+- **Datavolume:** **819 records / 276 KB** in één response. Gemeten op 17-07-2026 waren het er 812: **+7 in zes
+  weken**, dus een langzaam groeiende referentielijst.
+- **Kandidaat-partitiekolom:** geen.
+
+### sales
+
+- **Natuurlijke primaire sleutel:** **samengesteld — (productie-id, `id`)**, waarbij het productie-id via
+  `LoopParent.InjectField` op de rij moet komen. `id` alleen is het theater-id en dus **niet** uniek: 77 unieke
+  waarden op 140 rijen. Voor de geneste korrel: (productie-id, `id`, `performances[].number`).
+- **Last-modified / update-timestamp:** `updated` — aanwezig op elk record én op elk genest element.
+- **Ondersteunt de API incrementeel ophalen?** **Nee.** Het veld bestaat, de parameter niet.
+- **Geeft de API updates op bestaande records?** **Ja, aantoonbaar** — `updated` liep in de meting door tot
+  hetzelfde uur waarop de meting draaide. Verkoopcijfers worden doorlopend bijgewerkt.
+- **Volledige periode nodig voor delete-detectie?** **Ja.**
+- **Datavolume:** steekproef van 10 producties gaf **171 rijen / 73 KB** over 9 producties (de tiende gaf HTTP
+  400), gemiddeld 19 per productie (min 1, max 59), plus 261 geneste elementen. **Extrapolatie: ~1.900 rijen /
+  ~0,8 MB** over 101 producties. Schatting uit een steekproef, geen telling.
+- **Kandidaat-partitiekolom:** het geïnjecteerde productie-id.
+
+> **Kosten van de twee loops samen.** `performances` en `sales` doen elk één call per productie: bij een venster
+> van 2015–2026 dus **202 calls per volledige run**, bovenop 2 calls voor `productions` en `theaters` en 1 voor
+> `contracts`. Er is in de meting geen enkele 429 opgetreden — maar zie [Rate limits](#rate-limits): dat is
+> geen bewijs dat er geen limiet is.
+
 ## Benodigde uitbreidingen aan general-notebooks
 
 | Benodigde functionaliteit | Reden | Betrokken notebook | Voorbeeld/omweg | User Story ID |
 |---|---|---|---|---|
 | Eenzijdig date-watermark (alleen `ParamStart`, geen `ParamEnd`) | `/contracts` kent alleen `?modifiedSince=`. `_build_date_params` **werpt een `ValueError`** als `ParamEnd` ontbreekt (`notebook_Config_API.py:1336-1342`), en de validator eist bij de strategieën `page`/`offset` beide sleutels (`:2438`, `:2450`). Een `date`-watermark op `/contracts` is dus niet configureerbaar. | `notebook_Config_API.py` | **Geen blokkade.** Omweg 1: `strategy: single` zonder watermark — volledige ophaal, 9,4 MB / 4,9 s, prima dagelijks. Omweg 2: DIP negeert onbekende query-parameters stil (live geverifieerd met `excludeContactInfo=true` en `includeContacts=false` → beide 200, geen effect), dus een `ParamEnd` met een genegeerde naam zou technisch werken — een omweg die op stil gedrag van de bron leunt en dus fragiel is. | *aan te vragen — laag* |
+
+| Onderscheid tussen "geen data" en "de bron is stuk" in een parent-loop | `ParentLoopExtractor` vangt élke child-fout af als `logger.warning` en gaat door (`notebook_Config_API.py:2219-2220`). Dat is precies goed voor `/productions/{n}/sales`, dat **HTTP 400** geeft bij een productie zonder verkoopgeschiedenis. Maar het maakt een echte storing — verlopen token, 500'en — óók een reeks warnings met een geslaagde run eromheen. Bij 101 ouders is dat het verschil tussen "1 productie zonder verkoop" en "100 producties niet opgehaald", en beide zien er in de runlog hetzelfde uit. | `notebook_Config_API.py` | **Geen blokkade voor deze bron.** Omweg: na de eerste geslaagde run het rijaantal in Bronze als ondergrens bewaken (`check_data_freshness.py`), zodat een stille halvering opvalt. Een drempel op het aandeel mislukte ouders zou het bij de bron oplossen. | *aan te vragen — midden* |
 
 > **Geen andere hiaten gevonden.** De polymorfe `properties` (`oneOf` over 5 varianten) is geen
 > framework-probleem: `03_entity_schema_config.template.md` vraagt om een expliciete `StructType`, en een
@@ -607,10 +829,23 @@ en de gebruiker — niet voor dit rapport. Ik signaleer alleen dat de keuze onve
 | 8 | `/theaters/fees` → `400 "Not an agency"` terwijl `/contracts` wél werkt | Rechtenmodel per endpoint verschillend en niet gedocumenteerd. Buiten scope van dit ticket; relevant zodra iemand toeslagperiodes wil. |
 | 9 | verkoopmonitor / verkoopmutaties / publieksmonitor | **UNKNOWN** of de sales-endpoints de monitors 1-op-1 dekken; voor publieksmonitor is **geen** endpoint gevonden. Zie het [entiteitenoverzicht](#de-dip-menu-items-uit-de-ui-afgezet-tegen-de-api). |
 | 10 | Test-/acceptatie-omgeving | **Niet gevonden.** Alle onderzoek is tegen productie gedaan (read-only). |
+| 12 | **`amount_rank2` t/m `amount_rank10` zijn 0 in 267/267 uitvoeringen** | **UNKNOWN** of deze negen velden bij een andere producent of theatertype wél vullen. Alleen `amount_rank1` droeg data (299–1.559). Gesignaleerd voor config-builder: negen kolommen meenemen die altijd 0 zijn, of niet. |
+| 13 | `private`, `in_festival` en `isOtherLocation` zijn `false` in 267/267 | Geen variatie waargenomen; de velden zijn niet te valideren op betekenis. `isOtherLocation` is bovendien het enige camelCase-veld in de API — een naamgevingsafwijking, geen fout. |
+| 14 | Werken `co_producers`, `accompanied_by_producers`, `cast_members` en `forms` ooit? | **Leeg in élke waargenomen rij** (101 producties, 267 uitvoeringen). Het elementtype is daardoor **nooit waargenomen** en komt uitsluitend uit de spec. Relevant zodra iemand ze nodig heeft — `cast_members` draagt dan persoonsgegevens. |
+| 15 | Tijdzone van `sales.updated` en `performances.date` | **UNKNOWN.** Geen offset in de waarde, niets in de spec — dezelfde onduidelijkheid als bij `contracts.modified` (vraag 4). |
+| 16 | Geldt de HTTP 400 van `/sales` ook voor `/performances`? | **Niet waargenomen.** Alle 10 bemonsterde producties gaven 200 op `/performances`, ook die met één uitvoering. Of een productie zonder uitvoeringen bestaat, en wat dat endpoint dan doet, is **UNKNOWN**. |
 | 11 | `allow_new_connectors` kan op `false` staan voor de klant | Geen blokkade voor dít onderzoek: DIP is een **bestaande** connector, dit betreft een entiteitsuitbreiding, geen nieuwe bron. Gesignaleerd voor config-builder. |
 
 ---
 
-**Onderzoek uitgevoerd:** 17-07-2026 · **Bewijs:** OpenAPI-contract `https://external-api.dip.nl/swagger/v1/swagger.json`
-+ live `GET`-calls tegen productie met bestaande DIP-credentials uit de Key Vault van de klant.
+**Onderzoek uitgevoerd:** `contracts` en `/borderellen` op **17-07-2026**; `productions`, `performances`,
+`theaters` en `sales` op **25-08-2026**. · **Bewijs:** OpenAPI-contract
+`https://external-api.dip.nl/swagger/v1/swagger.json` (opnieuw opgehaald op 25-08-2026, 280 KB) + live
+`GET`-calls tegen productie met DIP-credentials uit de Key Vault van de klant, via
+`scripts/probe_source_api.py` — de waarden blijven server-side en komen nooit in beeld.
 Er zijn uitsluitend leesacties uitgevoerd; er is geen enkele schrijfactie tegen DIP gedaan.
+
+**Dekking van de meting van 25-08-2026:** `productions` en `theaters` volledig (101 respectievelijk 819
+records); `performances` en `sales` op een **steekproef van 10 producties**, gespreid over alle 13 seizoenen —
+264 uitvoeringen en 171 verkooprijen. Volumes voor die twee zijn daarom **extrapolaties**, expliciet als
+zodanig gemarkeerd. Er is geen enkele 429 opgetreden in ~35 opeenvolgende calls.
