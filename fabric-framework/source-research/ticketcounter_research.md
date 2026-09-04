@@ -1,44 +1,53 @@
 # Ticketcounter API-onderzoek
 
 researched_at: 2026-07-17
-checked_at: 2026-08-28
-checked_by: research agent (research-source-change-check v1.1, samengevoegd met het bestaande rapport)
+checked_at: 2026-09-04
+checked_by: research agent (live meetronde op v2, samengevoegd met het bestaande rapport)
 source_type: api
-overall_verdict: UNKNOWN — v1 is CURRENT, v2 kon niet live worden afgetast (authenticatie geweigerd)
+overall_verdict: REVIEW — v2 is live gemeten en bruikbaar; de eerder gemelde blokkades bestaan niet meer
 
 Onderzoek naar **TC.Tickets.API**. Er draaien twee generaties naast elkaar: een **legacy v1**
-`Statistics`-API op `api.ticketcounter.net`, waarop de bestaande connector produceert, en de
-**v2**-API op `apiv2.ticketcounter.eu`. Dit rapport documenteert beide en de delta die een
-migratie v1 naar v2 moet afdekken.
+`Statistics`-API op `api.ticketcounter.net`, waarop bestaande connectoren produceren, en de
+**v2**-API op de `apiv2`-hosts. Dit rapport documenteert de verbinding met beide en de delta die
+een migratie v1 → v2 moet afdekken.
+
+> **Reikwijdte is op 04-09-2026 versmald, en dat is aan dit rapport te zien.**
+> Research levert nog uitsluitend **de verbinding met de bron**: `source_config` (sectie 1) en
+> `entity_ingestion_config` (sectie 2). Alles wat een **telling** is — veldtypen, vulgraden,
+> volumes, kardinaliteit, uniciteit van de sleutel, hoe ver de historie teruggaat — is uit dit
+> rapport **verwijderd** en wordt door config-builder uit de **gelande Bronze-data** bepaald.
+> Reden: vanuit de bron is dat een steekproef, vanuit Bronze een telling, en een steekproef geeft
+> een ander antwoord dan de werkelijkheid. De vorige versie van dit rapport droeg vijf
+> veldencatalogi met Spark-typen en nullability per veld; die zijn hier vervangen door
+> [Response Shape per Entity](#response-shape-per-entity), dat alleen de **vorm** vastlegt.
+> Zoek je die typen: ze komen terug uit Bronze, niet uit dit document.
 
 ## Inhoudsopgave
 
 | Sectie | Omschrijving |
 |---------|-------------|
-| [Aanleiding en oordeel](#aanleiding-en-oordeel) | De leveranciersmelding, het JA/NEE/JA-MITS en de mitsen |
-| [Change-check 2026-08-28](#change-check-2026-08-28) | Wat er per dimensie is afgetast en wat eruit kwam |
-| [Twee kopieen van dit rapport](#twee-kopieen-van-dit-rapport) | Divergentie tussen clientrepo en platformregister |
+| [Aanleiding en oordeel](#aanleiding-en-oordeel) | Waar dit onderzoek vandaan komt en wat eruit komt |
+| [Wat deze ronde corrigeert](#wat-deze-ronde-corrigeert) | Vier bevindingen die de vorige versie tegenspreken |
+| [Twee kopieën van dit rapport](#twee-kopieën-van-dit-rapport) | Divergentie tussen clientrepo en platformregister |
 | [TypeSource](#typesource) | Bevestigd bronprotocol |
 | [Overzicht](#overzicht) | Wat v1 en v2 zijn en hoe ze zijn onderzocht |
-| [Huidige versie per entiteit](#huidige-versie-per-entiteit-gemeten) | De v1-baseline, live gemeten |
-| [Discount Name](#discount-name--de-leveranciersmelding) | Exacte veldnaam, type, nullability, vulgraad |
-| [Delta v1 en v2 voor sold-tickets](#delta-v1-en-v2-voor-sold-tickets) | Zes onderwerpen, elk breaking of niet-breaking |
-| [Authenticatie](#authenticatie) | OAuth2, secret-namen, token-endpoints, gemeten uitkomsten |
-| [Verbinding](#verbinding) | BaseUrl, rate-limit-vertraging, headers |
-| [Uitfasering van v1](#uitfasering-van-v1) | Wat er wel en niet over te vinden is |
-| [Gemengd draaien](#gemengd-draaien-een-entiteit-op-v2-de-rest-op-v1) | Kan een entiteit vooruit? |
+| [Twee hostfamilies](#twee-hostfamilies--net-en-eu-dragen-hetzelfde-contract) | `.net` en `.eu` dragen hetzelfde contract, maar niet dezelfde klanten |
+| [Authenticatie](#authenticatie) | De `api_key`-grant, de valstrik die uren kost, de secretnamen |
+| [Toegang per rol](#toegang-per-rol--buiten-statistics-is-het-403) | Wat een Statistics-sleutel wel en niet mag |
+| [Verbinding](#verbinding) | BaseUrl, RateLimitDelay, ApiHeaders |
+| [Rate limits](#rate-limits) | Gemeten voor beide generaties |
 | [Entiteitenoverzicht](#entiteitenoverzicht) | Endpoints binnen en buiten scope |
-| [Contract van de request body](#ticketcounter-v2--contract-van-de-request-body) | Filters, offset/limit en de datumbereik-enum |
-| [Paginering en ingestie per entiteit](#paginering-en-ingestie-per-entiteit) | Strategie en configuratiewaarden per entiteit |
-| [Rate limits](#rate-limits) | Gemeten voor v1, ongedocumenteerd voor v2 |
-| [Velden en voorbeeld-JSON per entiteit](#velden-en-voorbeeld-json-per-entiteit) | Links naar veldencatalogi |
-| [Belangrijkste datakenmerken per entiteit](#belangrijkste-datakenmerken-per-entiteit) | Sleutels, watermarks, volumes |
-| [Impact van de migratie v1 naar v2](#ticketcounter--impact-van-de-migratie-v1-naar-v2) | Wat breekt en wat blijft |
+| [Contract van de request body](#contract-van-de-request-body) | Filters, offset/limit en de datumbereik-enum |
+| [Paginering en ingestie per entiteit](#paginering-en-ingestie-per-entiteit) | Sectie 2: strategie, watermerk, pagineerparameters |
+| [Response Shape per Entity](#response-shape-per-entity) | Omhulsel, recordsleutel, veldnamen, datumopmaak |
+| [Delta v1 → v2 voor de verbinding](#delta-v1--v2-voor-de-verbinding) | Wat er breekt aan transport, auth en paginering |
+| [Uitfasering van v1](#uitfasering-van-v1) | Wat er wel en niet over te vinden is |
+| [Gemengd draaien](#gemengd-draaien-één-entiteit-op-v2-de-rest-op-v1) | Kan één entiteit vooruit? |
 | [Migratieplan](#migratieplan) | Genummerde stappen plus terugvalpad |
-| [Benodigde uitbreidingen aan general-notebooks](#benodigde-uitbreidingen-aan-general-notebooks) | Gevonden hiaten in het framework |
+| [Benodigde uitbreidingen aan general-notebooks](#benodigde-uitbreidingen-aan-general-notebooks) | Geen — en waarom dat veranderd is |
 | [Openstaande vragen / UNKNOWNs](#openstaande-vragen--unknowns) | Alles wat niet is geverifieerd |
 | [Vragen aan de leverancier](#vragen-aan-de-leverancier) | Wat alleen de leverancier kan beantwoorden |
-| [Verzamel-endpoints v2 (dimensies en referentie)](#verzamel-endpoints-v2--dimensie--en-referentiebronnen) | De 21 endpoints die een verzameling teruggeven, buiten de 5 Statistics-feiten |
+| [Verzamel-endpoints v2](#verzamel-endpoints-v2--dimensie--en-referentiebronnen) | De 21 endpoints buiten de vijf Statistics-feiten |
 
 ## Aanleiding en oordeel
 
@@ -48,68 +57,66 @@ doorgevoerd."*
 
 **De vraag:** kunnen we over naar API v2?
 
-### Oordeel: JA-MITS
+### Oordeel: JA
 
-De melding klopt en is verifieerbaar in het gepubliceerde contract. v2 is voor `sold-tickets`
-inhoudelijk een superset van v1 op twee velden na. Maar de overstap is **geen
-configuratiewijziging**: hij vraagt nieuwe inloggegevens, een uitbreiding van het
-ingestieframework en een herschrijving van schema en transformaties. Zolang die drie niet zijn
-geregeld, is het antwoord op *"kunnen we nu over?"* nee.
+v2 werkt. De tokenaanvraag slaagt, alle vijf `Statistics`-endpoints geven HTTP 200, de paginering
+is gemeten en het framework kan alles wat deze bron vraagt. De vorige versie van dit rapport
+concludeerde "JA-MITS" met drie blokkades. **Alle drie zijn weg** — twee omdat ze op een meetfout
+berustten, één omdat het framework inmiddels is uitgebreid:
 
-| # | Mits | Status | Wie lost het op |
-|---|---|---|---|
-| 1 | Nieuwe v2-clientinloggegevens per omgeving (grant `client_credentials`) | **Blokkade — gemeten `invalid_client`** | Leverancier levert; de klant voert ze in via het portalformulier |
-| 2 | Framework kan een REST-`POST` met JSON-filterbody sturen | **Blokkade — bestaat niet** | User story op `general-notebooks` |
-| 3 | OAuth2-`Scope` is configureerbaar | **Blokkade indien v2 de scope verplicht stelt — onbevestigd** | Kolom in het configuratieschema plus de generator |
-| 4 | `03_schema.py` en `04_transforms.py` herschrijven (PascalCase naar camelCase) | Werk, geen blokkade | config-builder |
-| 5 | Besluit over de twee velden die v2 niet meer levert | Besluit, geen blokkade | Gegevenseigenaar |
-
-**Bijvangst die het besluit kleurt:** v1 dwingt een **harde afkoeltijd van 120 seconden per
-endpoint** af (gemeten, HTTP 409). v2 documenteert geen enkele rate limit. Als dat klopt, is de
-winst van de migratie niet het ene kortingsveld maar de doorlooptijd van elke herlading. Dat is
-niet te bevestigen zonder werkende v2-inloggegevens.
-
-## Change-check 2026-08-28
-
-Alle vijf v1-endpoints zijn live afgetast; het v2-contract is opnieuw opgehaald en vergeleken met
-het rapport van 2026-07-17. v2 zelf kon niet worden aangeroepen.
-
-| Dimensie | Oordeel | Detail |
-|---|---|---|
-| v1 — authenticatie | `UNCHANGED` | `POST https://api.ticketcounter.net/token`, grant `refresh_token`, token verkregen |
-| v1 — verbinding | `UNCHANGED` | Alle vijf gedocumenteerde `url_path`-waarden geven HTTP 200 |
-| v1 — velden, alle vijf entiteiten | `UNCHANGED` | Recordsleutels en veldenlijsten komen overeen met de configuratie |
-| v1 — paginering | `UNCHANGED` | `offset`/`limit` in de query-string; `ResultCount` = rijen op deze pagina (gemeten) |
-| v1 — rate limits | `UNCHANGED` maar **nu gemeten** | HTTP 409 `"You may only perform this action every 120 seconds."` — per endpoint, niet per token |
-| v2 — contract `sold-tickets` | `FIELD_ADDED` | `discountName` erbij; 71 naar 72 velden; niets verdwenen |
-| v2 — contract `sold-subscriptions` | `FIELD_ADDED` | `discountName` erbij; 46 naar 47 velden; niets verdwenen |
-| v2 — contract `baskets` / `scans` / `cancellations` | `UNCHANGED` | Identiek aan het contract van 2026-07-17 |
-| v2 — authenticatie | `UNKNOWN` | HTTP 400 `invalid_client` op test en productie, met en zonder scope, beide omgevingen |
-| v2 — voorbeeldresponse, vulgraad, `resultCount`-semantiek, rate limits | `UNKNOWN` | Geblokkeerd door de authenticatie |
-
-**Totaaloordeel: `UNKNOWN`.** De bron waarop vandaag wordt geproduceerd (v1) is `CURRENT`; de
-doelversie (v2) is op het contract `REVIEW` — uitsluitend toevoegende wijzigingen — maar live
-`UNKNOWN`. Volgens de ernstvolgorde `STALE > UNKNOWN > REVIEW > CURRENT` wint `UNKNOWN`. Dat
-betekent escaleren naar de gebruiker, niet doorstromen naar een configuratiestap.
-
-## Twee kopieen van dit rapport
-
-Dit rapport bestond op **een** van de twee plekken, en dat is zelf een bevinding:
-
-| Waar | Stand voor deze run |
+| Was een blokkade (28-08-2026) | Stand op 04-09-2026 |
 |---|---|
-| Clientrepo (`client-outputs/ticketcounter_research.md`) | **Aanwezig**, bijgewerkt 2026-07-17T15:25:37Z |
-| Platformrepo (`fabric-framework/source-research/ticketcounter_research.md`) | **Afwezig** — `--action get --from platform` geeft `NOT_FOUND` |
-| Catalogusrij `source_research` | **Afwezig** — `--action list` toont alleen `dip`, `hubspot` en `shopify` |
+| v2 weigert de inloggegevens (`invalid_client`) | **Opgelost.** Niet de credentials waren fout maar de grant: v2 gebruikt `grant_type=api_key`, niet `client_credentials`. Met de juiste grant en host: HTTP 200 |
+| Het framework kan geen REST-`POST` met JSON-filterbody sturen | **Opgelost.** `StrategyDetails.Method="POST"` + `Body` doet precies dit; zie [Benodigde uitbreidingen](#benodigde-uitbreidingen-aan-general-notebooks) |
+| OAuth2-`Scope` is niet configureerbaar | **Opgelost.** De kolom `auth_scope` bestaat en de generator emitteert `AuthDetails.OAuth2.Scope` |
 
-De clientkopie was dus de enige die bestond en is als uitgangspunt genomen; er is niets
-overschreven. Waar deze run een eerdere bevinding tegenspreekt, staat dat in de tekst met de datum
-erbij. Waar een bevinding uit 2026-07-17 deze run niet opnieuw kon worden gecontroleerd — alles
-wat een werkend v2-token vraagt — blijft die staan, gemarkeerd als **ongeverifieerd**.
+Wat er overblijft is werk, geen blokkade: de configuratie moet worden gebouwd, en `03_schema.py`
+en `04_transforms.py` moeten mee (PascalCase → camelCase). Beide horen bij config-builder.
 
-Een eerdere bevinding is door deze run **achterhaald** en hier gecorrigeerd: het rapport van
-2026-07-17 stelde dat de `POST`-tak in de API-client onbereikbare dode code was. Dat klopt niet
-meer; zie [Benodigde uitbreidingen aan general-notebooks](#benodigde-uitbreidingen-aan-general-notebooks).
+**De grootste winst van de migratie is niet het kortingsveld** maar de doorlooptijd: v1 dwingt een
+afkoeltijd van 120 seconden per endpoint af, v2 vertoonde in circa veertig aanroepen op één dag
+geen enkele beperking. Zie [Rate limits](#rate-limits).
+
+## Wat deze ronde corrigeert
+
+Vier bevindingen spreken de versie van 28-08-2026 tegen. Ze staan hier bij elkaar omdat elk van de
+vier een dag werk kan kosten aan wie ze opnieuw moet ontdekken.
+
+| # | Stond er | Klopt niet, want |
+|---|---|---|
+| 1 | v2 weigert onze inloggegevens (`invalid_client`) | Er werd `client_credentials` gestuurd. v2 wil `grant_type=api_key` met een aparte API-sleutel en de **letterlijke** client-id `apikeygrant`. Daarmee: HTTP 200 |
+| 2 | v2 leeft op `apiv2.ticketcounter.eu` | Het is één contract op **twee hostfamilies**, en een sleutel werkt maar op één ervan. Zie [Twee hostfamilies](#twee-hostfamilies--net-en-eu-dragen-hetzelfde-contract) |
+| 3 | `sold-tickets` heeft 72 velden | Het **contract** telt er 72; een **respons** levert er minder omdat de bron elk veld met de waarde `null` weglaat. Dat is geen hostverschil en geen contractverschil — de twee swaggers zijn byte-voor-byte identiek op de `tokenUrl` na |
+| 4 | `GET /api/v2/DiscountReasons` bestaat | Dat pad staat niet meer in het contract. Het heet nu `GET /api/v2/Discount/reasons` — en geeft HTTP 403 |
+
+**En de valstrik die de meeste tijd kost, want hij faalt stil.** Er bestaan twee token-endpoints
+die allebei HTTP 200 geven op exact dezelfde `api_key`-aanvraag:
+
+```
+POST https://apiv2.ticketcounter.net/connect/token  -> 200, JWT met 3 segmenten    werkt op v2
+POST https://api.ticketcounter.net/token            -> 200, ondoorzichtig token
+                                                            van 1 segment          401 op elk v2-endpoint
+POST https://apiv2.ticketcounter.net/token          -> 404 (dit pad bestaat niet)
+```
+
+Het tweede token is het formaat van de **oude** API. Elk v2-endpoint antwoordt er `401` op, **met
+een lege foutbody** — geen `WWW-Authenticate`, geen JSON, geen aanwijzing. Wie de host overneemt
+uit de v1-configuratie en alleen het pad aanpast, krijgt dus een geslaagde tokenaanvraag en daarna
+een onverklaarbare 401. Alleen `/connect/token` op de `apiv2`-host levert een bruikbaar token.
+
+## Twee kopieën van dit rapport
+
+| Waar | Stand |
+|---|---|
+| Clientrepo (`client-outputs/{source}_research.md`) | Aanwezig. Draagt een **extra bijlage** met de omgevingsnamen en de secretnamen van die klant |
+| Platformrepo (`fabric-framework/source-research/`) | Aanwezig. Dit document, klantneutraal |
+| Catalogusrij `source_research` | Aanwezig |
+
+De twee kopieën spreken elkaar niet tegen: de clientkopie is deze tekst **plus** een bijlage die de
+platformkopie niet mag dragen. Waar deze ronde een eerdere bevinding tegenspreekt, staat dat in
+[Wat deze ronde corrigeert](#wat-deze-ronde-corrigeert) met de datum erbij. Bevindingen die deze
+ronde niet opnieuw konden worden gecontroleerd, blijven staan en zijn gemarkeerd als
+**ongeverifieerd**.
 
 ## TypeSource
 
@@ -123,22 +130,19 @@ meer; zie [Benodigde uitbreidingen aan general-notebooks](#benodigde-uitbreiding
 - **Host:** `https://api.ticketcounter.net`
 - **Vorm:** `GET` met query-string-parameters; respons JSON met PascalCase-velden.
 - **Documentatie: geen.** `/swagger/v1/swagger.json`, `/swagger/index.html` en `/help` geven alle
-  drie HTTP 404; de hostwortel redirect naar de marketingsite. Er is dus geen publiek contract,
-  geen changelog en geen statuspagina voor deze generatie.
-- **Bewijsbasis:** dit hoofdstuk is **live gemeten** op 2026-08-28 — alle vijf endpoints
-  aangeroepen, responses vastgelegd.
+  drie HTTP 404; de hostwortel redirect naar de marketingsite. Geen publiek contract, geen
+  changelog, geen statuspagina.
+- **Bewijsbasis:** live gemeten op 2026-08-28 — alle vijf endpoints aangeroepen.
 
 ### v2 — de doelgeneratie
 
 - **Titel:** `TC.Tickets.API`, versie `v2` (OpenAPI 3.0.4).
-- **De spec is openbaar, geen login vereist:**
-  - test: `https://apiv2test.ticketcounter.eu/swagger/v2/swagger.json`
-  - prod: `https://apiv2.ticketcounter.eu/swagger/v2/swagger.json`
-- **Omvang:** 148 paden, 352 schemadefinities, verdeeld over 30 taggroepen. Alleen de vijf
+- **De spec is openbaar, geen login vereist**, op elke host onder `/swagger/v2/swagger.json`.
+- **Omvang (opgehaald 04-09-2026):** 148 paden, 353 schemadefinities, 31 taggroepen. Alleen de vijf
   `Statistics`-endpoints vallen binnen de scope.
-- **Bewijsbasis: volledig afgeleid van het gepubliceerde OpenAPI-contract**, opnieuw opgehaald op
-  2026-08-28. Er is nog steeds **geen live call** gedaan — de inloggegevens worden geweigerd. Elk
-  type hieronder is een door het contract gedeclareerd type, geen waargenomen type.
+- **Bewijsbasis: live gemeten op 04-09-2026.** Alle vijf entiteiten aangeroepen, paginering en
+  omhulsel waargenomen, de vorm van elke respons vastgelegd. Waar dit rapport zich op het
+  gepubliceerde contract baseert in plaats van op een respons, staat dat er expliciet bij.
 - **Grootste structurele wijziging ten opzichte van v1:** de Statistics-endpoints zijn **POST met
   een JSON-body**, waar v1 GET met query-string-parameters gebruikt.
 
@@ -147,486 +151,137 @@ meer; zie [Benodigde uitbreidingen aan general-notebooks](#benodigde-uitbreiding
 > "V1" is **niet** de legacy Statistics-API. Hij telt 14 paden — `Basket/{basketKey}/changetimeslot`,
 > `Heartbeat`, `OfflineModule/*`, `Partner/depots`, `Reservation/*`, `ShopTranslation` — en **geen
 > enkel** `Statistics`-pad. De legacy Statistics-API op `api.ticketcounter.net` is een aparte,
-> ongedocumenteerde dienst. Dat onderscheid bepaalt hoe je een uitfaseringsmededeling van de
-> leverancier moet lezen: "v1 gaat uit" kan over twee verschillende dingen gaan.
+> ongedocumenteerde dienst. Dat onderscheid bepaalt hoe je een uitfaseringsmededeling moet lezen:
+> "v1 gaat uit" kan over twee verschillende dingen gaan.
 
-## Huidige versie per entiteit (gemeten)
+## Twee hostfamilies — `.net` en `.eu` dragen hetzelfde contract
 
-De vijf entiteiten die vandaag draaien, met het geconfigureerde `url_path` en wat de bron er op
-2026-08-28 daadwerkelijk op teruggaf. Venster `fromDate=2026-08-01`, `toDate=2026-08-07`
-(`ticket_scans`: `toDate=2026-08-03`), `offset=0`, `limit=2`. Alle vijf: HTTP 200.
+**Gemeten op 04-09-2026, drie hosts, `/swagger/v2/swagger.json`, alle drie HTTP 200:**
 
-| Entiteit | `url_path` (v1, in gebruik) | Recordsleutel gemeten | Velden per record | v2-tegenhanger |
-|---|---|---|---|---|
-| `sold_tickets` | `api/v1/statistics/soldtickets/nl-NL` | `SoldTicketsInfo` | 65 | `POST api/v2/Statistics/sold-tickets` → `soldTickets` |
-| `baskets` | `api/v1/statistics/baskets` | `Baskets` | 15 | `POST api/v2/Statistics/baskets` → `baskets` |
-| `ticket_scans` | `api/v1/statistics/ticketScans/nl-NL` | `TicketScanInfo` | 44 | `POST api/v2/Statistics/scans` → `scans` |
-| `sold_subscriptions` | `api/v1/statistics/soldsubscriptions/nl-NL` | `SoldSubscriptionsInfo` | 42 | `POST api/v2/Statistics/sold-subscriptions` → `soldSubscriptions` |
-| `cancellations` | `api/v1/statistics/cancellations/nl-NL` | `Cancellations` | 9 | `POST api/v2/Statistics/cancellations` → `cancellations` |
-
-De recordsleutel verschilt per entiteit en volgt geen patroon: twee entiteiten dragen het
-achtervoegsel `Info` (`SoldTicketsInfo`, `SoldSubscriptionsInfo`), een het enkelvoud daarvan
-(`TicketScanInfo`), en twee het kale meervoud (`Baskets`, `Cancellations`). Wie ze in v2 uit de
-oude configuratie overneemt, zit er op alle vijf naast — daar zijn ze allemaal camelCase-meervoud.
-
-**Responsomhulsel v1, identiek voor alle vijf:** `Offset`, `ResultCount`, `Succeeded`,
-`ErrorMessage`, `IsRedirect`, `RedirectUrl`, `DisplayError`. Er is **geen** `ErrorCode`; v2 voegt
-dat veld toe.
-
-**Paginering v1, gemeten op `sold_tickets`:**
-
-| Aanroep | `ResultCount` | `Offset` in de respons | Rijen |
-|---|---|---|---|
-| `offset=0&limit=3` | 3 | 3 | 3 |
-| `offset=0&limit=2` | 2 | 2 | 2 |
-| `offset=2&limit=2` | 2 | 4 | 2, met andere `TicketCode`-waarden dan de eerste pagina |
-
-`ResultCount` telt dus de rijen **op deze pagina**, niet het totaal — precies wat de offset-lus van
-het framework verwacht, want die stopt zodra `ResultCount < PageSize`. `Offset` in de respons is de
-*volgende* offset. Voor v2 is deze semantiek **niet gedocumenteerd** en niet te meten; zie
-[Openstaande vragen](#openstaande-vragen--unknowns).
-
-## Discount Name — de leveranciersmelding
-
-**De melding klopt.** Het veld staat in het gepubliceerde v2-contract en bestaat niet in v1.
-
-| Eigenschap | Waarde | Bewijs |
+| Host | Bytes | Verschil met `.net` |
 |---|---|---|
-| Exacte veldnaam | `discountName` | contract, letterlijk |
-| JSON-type | `string` | `{"type": "string"}` |
-| Nullability | **nullable** | `"nullable": true` |
-| Omschrijving in het contract | `Name of the discount which was used, if any` | contract |
-| Aanwezig op | `TC.Common.Models.Statistics.SoldTicketsInfo` **en** `TC.Common.Models.Statistics.SoldSubscriptionsInfo` | contract |
-| Aanwezig in v1 | **Nee** — v1 kent geen enkel kortingsveld, ook `DiscountCode` niet | live gemeten |
-| Gemeten vulgraad | **NIET GEMETEN — zie hieronder** | — |
+| `apiv2.ticketcounter.net` | 759 920 | — (referentie) |
+| `apiv2.ticketcounter.eu` | 759 918 | **Alleen de twee `tokenUrl`-waarden** in het `securitySchemes`-blok |
+| `apiv2test.ticketcounter.eu` | 760 032 | De `tokenUrl`, plus één extra veld `scanDefinitionName` op `TC.Common.Models.SubscriptionManagement.ProductDto` — buiten de Statistics-schema's |
 
-**Opgevraagde URL:** `https://apiv2.ticketcounter.eu/swagger/v2/swagger.json`, opgehaald op
-2026-08-28, HTTP 200, 759 479 bytes. De testhost
-`https://apiv2test.ticketcounter.eu/swagger/v2/swagger.json` geeft dezelfde inhoud (759 487 bytes),
-dus test en productie dragen hetzelfde contract.
+Genormaliseerd vergeleken (JSON geparseerd, sleutels gesorteerd) is het verschil tussen `.net` en
+`.eu` **exact twee regels**, allebei de `tokenUrl`. **Het zijn dus niet twee contracten.** Wie op
+de `.eu`-swagger onderzoekt en op `.net` produceert, leest hetzelfde document. Dat sluit een
+hostverschil uit als verklaring voor een kortere veldenlijst in een respons; de verklaring staat in
+[De bron laat lege velden wég](#de-bron-laat-lege-velden-wég--lees-elke-veldenlijst-als-ondergrens).
 
-**Vergelijking met het rapport van 2026-07-17.** Dat rapport legde 71 velden vast voor
-`SoldTicketsInfo` en 46 voor `SoldSubscriptionsInfo`. Het contract van vandaag telt er 72 en 47.
-Het verschil is op beide entiteiten **precies een veld, en dat veld is `discountName`**. Er is
-niets verdwenen en er is niets van type veranderd. `baskets`, `scans` en `cancellations` zijn
-veld-voor-veld identiek aan 2026-07-17. Dat maakt de leveranciersmelding niet alleen plausibel maar
-verifieerbaar: de wijziging is precies wat is aangekondigd, niet meer en niet minder.
-
-> **De vulgraad is niet gemeten, en dat is een gat in dit rapport.** Een vulgraad vraagt een echte
-> respons over een concreet datumvenster, en elke tokenaanvraag op v2 wordt geweigerd; zie
-> [Authenticatie](#authenticatie). Er is **niets geschat en niets verzonnen**. Wat het contract wel
-> zegt — `nullable: true`, "if any" — maakt aannemelijk dat het veld alleen gevuld is op regels met
-> een korting, dus een lage vulgraad is te verwachten en zegt op zichzelf niets over de juistheid
-> van het veld. Zodra er v2-inloggegevens zijn, is dit een enkele call:
-> `POST /api/v2/Statistics/sold-tickets` met body
-> `{"fromDate":"2026-08-01T00:00:00Z","toDate":"2026-08-07T23:59:59Z","excludeContactInfo":true,"limit":1000,"offset":0}`,
-> en daarna tellen hoeveel van de teruggegeven rijen een niet-lege `discountName` hebben.
-
-**Let op de businesswaarde.** `discountName` is een *naam*, geen sleutel. Het contract levert
-daarnaast `discountCode`, ook alleen in v2. De referentiebronnen erachter zijn
-`GET /api/v2/DiscountReasons` en de `Discounts`-endpoints. Het contract kent bovendien een enum
-`DiscountVersionEnum` met de waarden `V1 (legacy)`, `V2` en `Both`. Dat gaat over twee generaties
-**kortingscodes in het product**, niet over API-versies — een naamsgelijkenis die in gesprekken met
-de leverancier makkelijk verwarring geeft.
-
-## Delta v1 en v2 voor sold-tickets
-
-Zes onderwerpen, elk met een uitspraak en een label. "Breaking" betekent hier: de bestaande
-configuratie of code produceert na de overstap een ander resultaat of een fout, en moet dus worden
-aangepast.
-
-| # | Onderwerp | v1 (gemeten 2026-08-28) | v2 (contract 2026-08-28) | Label |
-|---|---|---|---|---|
-| 1 | **Veldnamen en -typen** | 65 velden, PascalCase | 72 velden, camelCase | **BREAKING** |
-| 2 | **Wrapper-key** | `SoldTicketsInfo`; omhulsel `Offset`, `ResultCount`, `Succeeded`, `ErrorMessage`, `IsRedirect`, `RedirectUrl`, `DisplayError` | `soldTickets`; omhulsel `offset`, `resultCount`, `succeeded`, `errorMessage`, `isRedirect`, `redirectUrl`, `displayError` plus **`errorCode`** | **BREAKING** |
-| 3 | **Paginering** | `offset` en `limit` als query-parameters; `ResultCount` = rijen op deze pagina | `offset` en `limit` **in de JSON-body**; `resultCount` in het omhulsel; `limit` maximaal 100 000, standaard 1000 | **BREAKING** |
-| 4 | **Datumfilterparameters** | `fromDate` / `toDate` als query-parameters, formaat `%Y-%m-%d` | `fromDate` / `toDate` **in de body**, formaat `date-time`; erbij: `modifiedFrom` / `modifiedTo` en `dateRangeType` | **BREAKING** |
-| 5 | **Authenticatie** | `POST https://api.ticketcounter.net/token`, grant `refresh_token`, geen scope, drie secrets | `POST https://apiv2.ticketcounter.eu/connect/token`, grant `client_credentials`, scope `TC.Tickets.API`, twee secrets | **BREAKING** |
-| 6 | **Rate limits** | **Harde afkoeltijd van 120 s per endpoint**, afgedwongen met HTTP 409 | Niets gedocumenteerd; geen `429` gedeclareerd op enig Statistics-endpoint | **NIET-BREAKING** |
-
-### 1. Veldnamen en -typen — BREAKING
-
-Van de 63 velden die beide generaties delen is er **geen enkele** met dezelfde spelling: v1 is
-PascalCase (`TicketCode`, `SaleDate`), v2 is camelCase (`ticketCode`, `saleDate`). Elke verwijzing
-in `03_schema.py` en `04_transforms.py` breekt.
-
-**Twee velden verdwijnen.** v2 heeft er geen equivalent voor, ook niet onder een andere naam:
-
-| v1-veld | v2 | Gevolg |
-|---|---|---|
-| `BuyingPrice` | bestaat niet | Inkoopprijs per plaats vervalt |
-| `CountryName` | alleen `countryCode` | Landnaam wordt landcode; wie de naam wil, decodeert zelf |
-
-**Negen velden komen erbij:** `capacityNames`, `countryCode`, `creationDate`, `discountCode`,
-`discountName`, `eventName`, `modificationDate`, `performerName`, `priceTypeName`.
-
-`creationDate` en `modificationDate` zijn daarvan de belangrijkste. v1 draagt **geen enkel
-wijzigingsveld**, waardoor incrementeel laden nu volledig op het aanvraagvenster leunt. Met
-`modificationDate` in de payload en `modifiedFrom` / `modifiedTo` als filter wordt echte
-change-data capture mogelijk. Dat is een grotere verbetering dan het kortingsveld waar de melding
-over gaat.
-
-**Typen.** Het contract declareert `saleDate`, `validFrom`, `validTo`, `cancelDate`,
-`confirmedDate`, `capacityDate`, `creationDate` en `modificationDate` als `string` met formaat
-`date-time`. v1 levert diezelfde velden ook als JSON-string. Op de draad is dat dus geen
-typewijziging; de declaratie is alleen preciezer geworden. `nrOfSeats` is in beide een integer;
-`price`, `totalPrice` en `originalPrice` zijn in beide een getal. **Niet nagemeten:** of v2
-dezelfde tekstuele datumopmaak gebruikt als v1, met of zonder tijdzone-achtervoegsel. Dat bepaalt
-of een `cast("timestamp")` in de transformatie ongewijzigd kan blijven, en is pas op een echte
-respons te zien.
-
-### 2. Wrapper-key — BREAKING
-
-`Output.RecordKey` gaat van `SoldTicketsInfo` naar `soldTickets`, en `Pagination.ResultCountKey`
-van `ResultCount` naar `resultCount`. Beide zijn configuratiewaarden, dus de reparatie is klein.
-Maar zonder die wijziging vindt de extractor geen records en geen paginateller, en meldt de run
-"0 rijen" in plaats van een fout. Dat is precies het soort stille afwijking waarvoor deze delta
-bestaat. `errorCode` is nieuw in het omhulsel en zuiver additief: het framework leest het niet.
-
-### 3. Paginering — BREAKING
-
-Het *model* verandert niet: offset-paginering met een paginagrootte, met datumchunking eromheen.
-`strategy: chunk_offset`, `OffsetParam: offset`, `PageSizeParam: limit`, `PageSize: 10000` en
-`LoopChunks.ChunkSize: 30` kunnen alle vijf blijven staan. Wat verandert is het *transport*: de
-parameters moeten in de JSON-body in plaats van in de query-string, en dat kan het framework niet.
-De v2-grens van 100 000 rijen per call ligt ruim boven de gebruikte 10 000.
-
-**Risico dat pas op een echte respons zichtbaar wordt.** Het contract geeft `resultCount` geen
-omschrijving. De offset-lus stopt zodra `resultCount < PageSize`. Is `resultCount` in v2 het
-*totaal aantal gevonden rijen* in plaats van *het aantal op deze pagina*, dan stopt die lus nooit
-op tijd en loopt hij door tot de laatste pagina leeg is — of, erger, tot hij dezelfde pagina blijft
-herhalen. In v1 is het gemeten en is het de paginatelling. Dat is een sterke aanwijzing voor v2,
-geen bewijs.
-
-### 4. Datumfilterparameters — BREAKING
-
-`fromDate` en `toDate` blijven bestaan en houden hun betekenis als vensterbegrenzing, maar
-verhuizen naar de body en gaan van `%Y-%m-%d` naar `date-time`. De overlap van 2 dagen en de chunks
-van 30 dagen kunnen ongewijzigd blijven.
-
-Nieuw is `dateRangeType`, een integer-enum: `0 = ConfirmationDate` (**standaard**),
-`1 = CreationDate`, `2 = VisitDate`. **Onbekend en belangrijk:** op welke datum `fromDate` en
-`toDate` in v1 filteren. Is dat niet de bevestigingsdatum, dan levert hetzelfde venster in v2 een
-andere rijenset op zonder dat er iets faalt. Dit moet bij de leverancier worden nagevraagd of met
-een vergelijkende telling worden vastgesteld voordat er op v2 wordt geproduceerd.
-
-Ook nieuw: `modifiedFrom` en `modifiedTo`. Die maken incrementele verversing op wijzigingsdatum
-mogelijk in plaats van een venster op de verkoopdatum. Een verbetering, maar wel een die de
-betekenis van het watermerk verandert en dus een bewuste keuze vraagt.
-
-### 5. Authenticatie — BREAKING
-
-Zie [Authenticatie](#authenticatie) voor de gemeten uitkomsten. Alles verandert: host,
-token-endpoint, grant-type, het aantal benodigde secrets, en er komt een scope bij. De huidige
-inloggegevens worden door v2 geweigerd.
-
-### 6. Rate limits — NIET-BREAKING
-
-v1 dwingt een afkoeltijd af die in geen enkele documentatie staat en die deze run bij toeval heeft
-gevonden. Een tweede aanroep op hetzelfde endpoint binnen 120 seconden geeft:
+Wat wél per hostfamilie verschilt is **welke sleutel er wordt geaccepteerd**. Een sleutel die op
+`apiv2.ticketcounter.net/connect/token` een token oplevert, geeft op de `.eu`-hosts:
 
 ```
-HTTP 409
-"You may only perform this action every 120 seconds."
+POST https://apiv2.ticketcounter.eu/connect/token      -> HTTP 400 {"error":"invalid_grant",
+                                                                    "error_description":"API key is invalid"}
+POST https://apiv2test.ticketcounter.eu/connect/token   -> HTTP 400, idem
 ```
 
-Een aanroep op een **ander** endpoint direct daarna geeft gewoon HTTP 200. De afkoeltijd geldt dus
-**per endpoint**, niet per token en niet per client. Dat verklaart de `rate_limit_delay` van 125 in
-de bestaande configuratie: dat zijn seconden, met vijf seconden marge.
-
-v2 documenteert niets. De spec bevat geen woord over rate limits, throttling of quota, en op geen
-enkel Statistics-endpoint is een `429` gedeclareerd. `429 Too Many Requests` komt in de hele spec
-een keer voor, op `POST /api/v2/WaitingRoom/claim`. De enige harde grens is een body-grens en geen
-rate limit: `limit` maximaal 100 000 rijen per call.
-
-Dit is als **niet-breaking** gelabeld omdat de bestaande instelling van 125 seconden op v2 blijft
-werken; hij is alleen waarschijnlijk veel te conservatief. Wie hem verlaagt zonder te meten, ruilt
-een trage run in voor een onvoorspelbare. De generieke client herhaalt een `429` al met de
-`Retry-After`-header en een `409` met lineaire backoff, dus een ongedocumenteerde limiet leidt tot
-vertraging in plaats van uitval.
-
-## Uitfasering van v1
-
-**Onbekend — de leverancier moet worden bevraagd.** Dit is wat er is gezocht en wat het opleverde:
-
-| Waar gezocht | Uitkomst |
-|---|---|
-| v2-spec, alle 148 paden en 352 schemadefinities | Geen enkel `Statistics`-pad of `Statistics`-schema is `deprecated`. De twaalf `deprecated`-vlaggen die er staan, zitten op ongerelateerde velden: annuleringsvelden, `availablePriceKeys` en een betaalmethodeveld |
-| v2-spec op `sunset`, `deprecat`, `obsolete`, `legacy` | Geen sunset-datum. `legacy` komt twee keer voor en gaat over kortingscode- en uitnodigingscodeversies in het product, niet over de API |
-| `api.ticketcounter.net`: swagger, `/help`, hostwortel | HTTP 404, HTTP 404, redirect naar de marketingsite. Geen publiek contract en geen changelog |
-| Publieke ontwikkelaarsportalen (`docs.`, `developer.`, `support.`, `helpdesk.ticketcounter.eu`) | Bestaan niet; DNS lost niet op |
-| Websearch op uitfaseringsbeleid en release notes | Niets van deze leverancier gevonden |
-
-**Conclusie: onbekend — leverancier bevraagd op 2026-08-28**, via de vraag in
-[Vragen aan de leverancier](#vragen-aan-de-leverancier). Dat is de datum waarop de vraag is
-opgesteld; het stellen ervan ligt bij de opdrachtgever, want dit onderzoek voert geen
-leverancierscorrespondentie.
-
-Zolang die datum ontbreekt is er **geen deadline** en dus ook geen dwang om te migreren. Dat
-verandert het karakter van het besluit: het is een verbeteringsbesluit, geen continuiteitsbesluit.
-Zodra de leverancier wel een datum noemt, kantelt dat en wordt de doorlooptijd van de drie
-blokkades het kritieke pad.
-
-## Gemengd draaien: een entiteit op v2, de rest op v1
-
-**Nee, niet binnen een bronconfiguratie.** De reden is de tokenflow, en die is gedeeld.
-
-Het configuratieschema legt de verbindings- en authenticatiegegevens vast op **bronniveau**, niet op
-entiteitsniveau. De tabel `source_connection_configs` heeft een rij per bronconfiguratie en draagt
-`base_url`, `auth_method`, `auth_grant_type`, `auth_token_endpoint`, de drie secret-templates,
-`key_vault_url` en `rate_limit_delay`. De tabel `source_entity_ingestion_configs` heeft daarentegen
-**geen enkele** auth- of base-url-kolom: hij kent alleen `url_path`, `strategy`, de watermerkvelden,
-de recordsleutel en `strategy_details`.
-
-Alle vijf entiteiten delen daarom noodgedwongen:
-
-- een host,
-- een token-endpoint en een grant-type,
-- een set Key Vault-secrets,
-- een `rate_limit_delay`.
-
-`sold_tickets` op `client_credentials` tegen de v2-host zetten terwijl de andere vier op
-`refresh_token` tegen de v1-host blijven, kan dus niet: er is maar een plek waar het grant-type
-staat, en die geldt voor de hele bron.
-
-**Nuance, want de notebook kan meer dan het schema.** De API-client kent wel een per-entiteit
-override van de base-URL (`Details.EntityBaseUrl`, gebruikt in `get_entity()`). Er is alleen geen
-kolom in het configuratieschema die hem vult, en hij lost het echte probleem niet op: een andere
-host is nog geen ander token.
-
-**Wat wel kan, met open ogen:** een **tweede bron-slug** aanmaken met een eigen
-`source_connection_configs`-rij die op v2 wijst, en daar alleen `sold_tickets` in hangen. Dat is
-technisch houdbaar, maar het is een nieuwe bron en geen gedeeltelijke overstap. De prijs:
-
-- een tweede Bronze-landingsmap en een tweede watermerkreeks voor dezelfde entiteit,
-- een eigen paar `03_schema.py` / `04_transforms.py`,
-- een eigen plek in de pipeline en het schema,
-- en de verplichting om de entiteit uit de oude bronconfiguratie te halen, anders schrijven twee
-  configuraties naar dezelfde Silver-tabel.
-
-Omdat de drie blokkades — inloggegevens, POST-body, scope — sowieso voor **elke** v2-entiteit
-gelden, levert die tweedeling geen tijdwinst op. Ze is alleen zinvol als je het risico van de
-eerste v2-productierun wilt beperken tot een entiteit. Dat is een verdedigbare keuze, maar het is
-een extra bron beheren, niet een knop omzetten.
+`invalid_grant` — *"API key is invalid"* — en niet `invalid_client`: het endpoint bestaat en de
+grant wordt herkend, de **sleutel** hoort er alleen niet thuis. De hostfamilie is dus een
+eigenschap van de klant, niet van de API. **Stel hem vast vóór je iets anders meet**, want elke
+meting op de verkeerde host mislukt om een reden die niets met je vraag te maken heeft.
 
 ## Authenticatie
 
-### v1 (in productie, werkt)
+### v2 (doel) — patroon C2, OAuth2 met grant `api_key`
 
-- **Patroon:** OAuth2 met grant `refresh_token`
-- **AuthScheme / Method:** `bearer` / `oauth2`
-- **Token-endpoint:** `https://api.ticketcounter.net/token`
-- **Scope:** geen
-- **Secret-namen in de Key Vault** (alleen namen; waarden worden nooit gelezen):
-  - `ticketcounter-{environment}-client-id`
-  - `ticketcounter-{environment}-client-secret`
-  - `ticketcounter-{environment}-refresh-token`
+- **Patroon:** C2 uit `01_source_config.template.md` — OAuth2 `api_key`-grant (`ApiKeyGrantAuth`).
+- **AuthScheme / Method:** `bearer` / `oauth2`, `GrantType: api_key`
+- **Token-endpoint:** `https://apiv2.ticketcounter.{net|eu}/connect/token` — **het pad `/connect/`
+  is verplicht**, zie de valstrik hierboven.
+- **Scope:** `TC.Tickets.API`
+- **Form-body van de tokenaanvraag:** `client_id=apikeygrant`, `api_key=<sleutel>`,
+  `grant_type=api_key`, `scope=TC.Tickets.API`
+- **Secretnaam in de Key Vault** (alleen namen; waarden worden nooit gelezen):
+  `ticketcounter-{environment}-v2-api-key` — **één** secret per omgeving.
+- **`apikeygrant` is géén secret.** Het is een letterlijke constante die de leverancier publiceert,
+  gelijk voor elke klant. Hij hoort in de configuratie (`AuthDetails.OAuth2.ClientId`), niet in de
+  kluis: een constante in de Key Vault wordt per klant als ontbrekend secret gemeld, zonder enig
+  voordeel.
+- **Het token:** JWT met drie segmenten, geldig 3600 s (gemeten 04-09-2026). De notebook cachet hem
+  tot 60 s vóór het verlopen.
+- **De `client-id` / `client-secret` / `refresh-token`-secrets van v1 vervallen** op v2. Ze geven
+  `invalid_client`, en dat is terecht: v2 kent dit patroon niet voor deze bron.
+
+### v1 (in productie, werkt) — patroon C, grant `refresh_token`
+
+- **Token-endpoint:** `https://api.ticketcounter.net/token`, grant `refresh_token`, geen scope
+- **Secretnamen:** `ticketcounter-{environment}-client-id`, `-client-secret`, `-refresh-token`
 - **Gemeten 2026-08-28:** tokenaanvraag geslaagd, toegang tot alle vijf endpoints.
 
-### v2 (doel, wordt geweigerd)
+### Gemeten tokencombinaties
 
-- **Patroon:** OAuth2 met grant `client_credentials`
-- **Token-endpoint:**
-  - prod: `https://apiv2.ticketcounter.eu/connect/token`
-  - test: `https://apiv2test.ticketcounter.eu/connect/token`
-- **Scope:** `TC.Tickets.API`
-- **Secret-namen:** dezelfde `client-id` en `client-secret` conventie; het
-  `refresh-token`-secret **vervalt**.
-- **Aangeboden grants:** de discovery (`/.well-known/openid-configuration`, publiek, opgehaald
-  2026-08-28) noemt `authorization_code`, `client_credentials`, `refresh_token`, `implicit`,
-  `password`, `urn:ietf:params:oauth:grant-type:device_code`, `stc_delegation`,
-  `tcproxy_delegation` en `api_key`. De ondersteunde scopes zijn `TC.Tickets.API` en
-  `offline_access`. Test en productie geven exact dezelfde discovery.
+| Endpoint | Grant | Uitkomst |
+|---|---|---|
+| `apiv2.ticketcounter.net/connect/token` | `api_key` + `apikeygrant` + scope | **HTTP 200, JWT (3 segmenten)** — werkt op alle v2-endpoints |
+| `apiv2.ticketcounter.net/token` | — | **HTTP 404** — dit pad bestaat niet |
+| `api.ticketcounter.net/token` | `api_key` (zelfde sleutel) | **HTTP 200, token van 1 segment** — geeft `401` met lege body op elk v2-endpoint |
+| `apiv2.ticketcounter.eu/connect/token` | `api_key` | HTTP 400 `invalid_grant` — *"API key is invalid"* |
+| `apiv2test.ticketcounter.eu/connect/token` | `api_key` | HTTP 400, idem |
+| `apiv2.ticketcounter.*/connect/token` | `client_credentials` met de v1-secrets | HTTP 400 `invalid_client` (gemeten 28-08-2026) |
+| `api.ticketcounter.net/token` | `refresh_token` (v1, controle) | HTTP 200 — v1 blijft werken |
+
+**Meerdere omgevingen.** De bron levert per omgeving een eigen sleutel; de omgevingsnaam wordt via
+`{environment}` in de secretnaam ingevuld. Beide omgevingen zijn op 04-09-2026 afzonderlijk
+getest: **beide leveren een token en beide geven rijen terug** op de Statistics-endpoints. Ze delen
+dezelfde host en hetzelfde token-endpoint; alleen de sleutel verschilt.
+
+- **De discovery** (`/.well-known/openid-configuration`, publiek) noemt als grants:
+  `authorization_code`, `client_credentials`, `refresh_token`, `implicit`, `password`,
+  `urn:ietf:params:oauth:grant-type:device_code`, `stc_delegation`, `tcproxy_delegation` en
+  **`api_key`**. Ondersteunde scopes: `TC.Tickets.API` en `offline_access`.
 - **Security geldt globaal:** de spec declareert op topniveau `security: [{oauth2: [], bearer: []}]`
-  en de Statistics-operaties declareren geen override per operatie, dus het bearer-token geldt voor
-  alle vijf.
+  zonder override per operatie, dus hetzelfde bearer-token geldt voor alle endpoints.
 
-### Gemeten: welke combinaties zijn geprobeerd
+## Toegang per rol — buiten Statistics is het 403
 
-Alle aanvragen op 2026-08-28, met de bestaande secrets uit de Key Vault.
+Een sleutel die alle vijf `Statistics`-endpoints mag lezen, mag daarmee **niet** alles. Gemeten op
+04-09-2026, opnieuw bevestigd:
 
-| Token-endpoint | Grant | Scope | Uitkomst |
-|---|---|---|---|
-| `https://apiv2.ticketcounter.eu/connect/token` | `client_credentials` | `TC.Tickets.API` | **HTTP 400 `{"error":"invalid_client"}`** |
-| `https://apiv2.ticketcounter.eu/connect/token` | `client_credentials` | *geen* | **HTTP 400 `invalid_client`** |
-| `https://apiv2.ticketcounter.eu/connect/token` | `client_credentials` | `offline_access` | **HTTP 400 `invalid_client`** |
-| `https://apiv2.ticketcounter.eu/connect/token` | `refresh_token` (met het v1-refresh-token) | `TC.Tickets.API` | **HTTP 400 `invalid_client`** |
-| `https://apiv2test.ticketcounter.eu/connect/token` | `client_credentials` | `TC.Tickets.API` | **HTTP 400 `invalid_client`** |
-| `https://api.ticketcounter.net/token` (controle) | `refresh_token` | *geen* | **HTTP 200, token verkregen** |
+| Endpoint | Uitkomst |
+|---|---|
+| `GET /api/v2/Discount/reasons` | **HTTP 403** |
+| `POST /api/v2/Discount/codes-basic-info` | **HTTP 403** |
+| `GET /api/v2/Discount/{discountCode}` | **HTTP 403** |
 
-Bovendien: `GET https://api.ticketcounter.net/api/v2/statistics/soldtickets/nl-NL` geeft HTTP 404.
-v2 leeft niet op de v1-host; er is geen sluiproute.
+Foutvorm — nuttig, want het is de enige plek waar de foutvelden van het omhulsel zichtbaar worden:
 
-De controle-aanroep is de belangrijke: dezelfde secrets werken wel op v1. De waarden zijn dus
-correct opgeslagen en leesbaar — ze zijn eenvoudigweg **niet als client geregistreerd bij de
-v2-identiteitsserver**. `invalid_client` van een IdentityServer betekent precies dat: onbekende
-client, of een secret dat niet bij die client hoort.
+```json
+{"succeeded": false,
+ "errorMessage": "You do not have the required permissions to access the requested resource.",
+ "isRedirect": false, "redirectUrl": null, "displayError": true, "errorCode": ""}
+```
 
-**Conclusie voor de inloggegevens:** v2 gebruikt **niet** dezelfde inloggegevens. Er zijn nieuwe
-client-inloggegevens nodig, **per omgeving**, met scope `TC.Tickets.API`. De bestaande vault en de
-bestaande naamconventie kunnen blijven; het `refresh-token`-secret vervalt. Omdat de credentials
-wijzigen, is dit een **blokkade**: secretwaarden lopen via het invoerformulier van het portal, dat
-ze browser-direct in de Key Vault van de klant schrijft, en nooit via een agent.
-
-### Configuratiehiaat: de scope is niet in te stellen
-
-De notebook ondersteunt `AuthDetails.OAuth2.Scope` en stuurt hem mee wanneer hij gevuld is. Maar er
-is **geen kolom** in `source_connection_configs` die hem draagt, en de configuratiegenerator emitteert
-`Scope` nergens: hij bouwt het `OAuth2`-blok uit `GrantType`, `TokenEndpoint`,
-`ClientIdSecretTemplate`, `ClientSecretSecretTemplate` en eventueel `RefreshTokenSecretTemplate`, en
-verder niets. De enige bestaande `client_credentials`-bron in dit landschap heeft geen scope nodig,
-dus het is nooit opgevallen.
-
-Gevolg: als v2 de scope **verplicht** stelt, kan er vandaag geen werkende v2-configuratie worden
-gebouwd, ook niet met geldige inloggegevens. Of de scope werkelijk verplicht is, valt niet te testen
-zolang `invalid_client` terugkomt — een IdentityServer die geen scope krijgt, geeft soms alsnog een
-token met alle toegestane scopes. **UNKNOWN, en het risico is asymmetrisch:** het kost weinig om de
-kolom toe te voegen en veel om er tijdens de eerste productierun achter te komen.
+**Dit is een vastgesteld feit, geen openstaande actie.** Of er rechten worden aangevraagd is een
+klantbesluit; voor het onderzoek zelf betekent het dat de kortingsdimensie (de tabel achter
+`discountCode`) niet via deze API bereikbaar is en dat `discountName` de enige beschrijvende
+kortingsinformatie in de feiten is. Toegang verschilt bij deze leverancier per rol — reken er niet
+op dat een sleutel die Statistics leest, ook referentiedata leest.
 
 ## Verbinding
 
 - **BaseUrl:**
   - v1 (in gebruik): `https://api.ticketcounter.net`
-  - v2 prod: `https://apiv2.ticketcounter.eu`
+  - v2: `https://apiv2.ticketcounter.net` **of** `https://apiv2.ticketcounter.eu` — per klant één
+    van beide, zie [Twee hostfamilies](#twee-hostfamilies--net-en-eu-dragen-hetzelfde-contract)
   - v2 test: `https://apiv2test.ticketcounter.eu`
-  - De v2-spec declareert geen `servers`-blok; de base-URL's zijn overgenomen uit de gepubliceerde
-    spec en de token-host.
+  - De v2-spec declareert geen `servers`-blok; de base-URL's komen uit de token-host.
 - **RateLimitDelay:**
-  - v1: `125` (seconden) — en dat is **noodzakelijk**, want de bron dwingt 120 seconden per endpoint
-    af. Zie [Rate limits](#rate-limits).
-  - v2: `0.5` seconden als voorzichtige startwaarde, **niet** afgeleid van een gedocumenteerde
-    limiet, want die bestaat niet. Opnieuw beoordelen na de eerste live run.
-- **Meerdere omgevingen per klant:** de bron levert per omgeving een eigen set inloggegevens; de
-  omgevingsnaam wordt in de secret-namen ingevuld via `{environment}`. Aan de kant van de leverancier
-  bestaat daarnaast een testomgeving (`apiv2test`) die voor validatie bruikbaar is zodra er
-  inloggegevens zijn.
-- **ApiHeaders:** voor v2 is `Content-Type: application/json` **verplicht**, omdat elke
-  Statistics-call een JSON-request-body heeft. Geaccepteerde request-mediatypes per endpoint:
-  `application/json`, `application/json-patch+json`, `text/json`, `application/*+json`. De
-  succesrespons is in de spec gedeclareerd als `text/plain`, `application/json` en `text/json`, maar
-  draagt in alle drie hetzelfde JSON-schema. **UNKNOWN** welke `Content-Type`-responseheader er
-  werkelijk uitkomt; parseert de client hem als JSON, dan is dit een documentatiekwestie en geen
-  blokkade.
-- **Stabiliteit v1 (waarneming):** een van de zeven live aanroepen in deze run brak af met een
-  afgebroken TLS-verbinding en slaagde bij herhaling wel. Eenmalig, dus geen patroon — maar het
+  - v1: `125` (seconden) — **noodzakelijk**, de bron dwingt 120 s per endpoint af.
+  - v2: `0.5` seconden als voorzichtige startwaarde. Er is geen limiet gedocumenteerd en er is er
+    ook geen waargenomen; 0,5 is beleid, geen meting.
+- **ApiHeaders:** `Content-Type: application/json` is voor v2 **verplicht** — elke Statistics-call
+  draagt een JSON-body. Geaccepteerde request-mediatypes per endpoint: `application/json`,
+  `application/json-patch+json`, `text/json`, `application/*+json`. De succesrespons is in de spec
+  gedeclareerd als `text/plain`, `application/json` én `text/json` met hetzelfde schema; in de
+  praktijk parseerde elke gemeten respons als JSON, dus de `text/plain`-declaratie is een
+  documentatie-eigenaardigheid en geen probleem.
+- **Stabiliteit v1 (waarneming 28-08-2026):** één van zeven live aanroepen brak af met een
+  afgebroken TLS-verbinding en slaagde bij herhaling. Eenmalig, dus geen patroon — maar het
   bevestigt dat de retry-logica van de generieke client hier nut heeft.
-
-## Migratieplan
-
-Genummerde stappen. De eerste drie zijn de blokkades; ze kunnen parallel lopen, maar geen van de
-latere stappen kan zonder alle drie.
-
-1. **Vraag v2-inloggegevens aan bij de leverancier**, per omgeving, met grant `client_credentials`
-   en scope `TC.Tickets.API`. Vraag er meteen bij of de bestaande client kan worden uitgebreid naar
-   v2 of dat het een nieuwe client wordt, en of `apiv2test` bruikbare data draagt voor validatie.
-2. **Laat de klant de secrets invoeren via het portalformulier.** Twee secrets per omgeving:
-   `ticketcounter-{environment}-client-id` en `ticketcounter-{environment}-client-secret`. Het
-   bestaande `refresh-token`-secret blijft nog even staan; dat is het terugvalpad. Nooit via een
-   agent, nooit via een chat.
-3. **Open een user story op `general-notebooks`** voor een REST-`POST` met JSON-filterbody. Concreet:
-   `StrategyDetails.Method='POST'` toestaan **zonder** GraphQL-blok, en de paginerings-, watermerk-
-   en `ExtraParams`-waarden in de body binden in plaats van in de query-string. Vraag in dezelfde
-   story om een `Scope`-kolom in het configuratieschema plus emissie in de generator, of open daar
-   een tweede story voor. Zie [Benodigde uitbreidingen aan general-notebooks](#benodigde-uitbreidingen-aan-general-notebooks).
-4. **Meet v2 zodra stap 2 rond is, nog voordat er iets wordt gebouwd.** Een call per entiteit met
-   `limit=1000` over een venster waarvan de v1-telling bekend is. Leg vast: de echte
-   voorbeeld-JSON, de `resultCount`-semantiek, de vulgraad van `discountName`, de datumopmaak, en
-   het aantal rijen dat hetzelfde venster in v1 en v2 oplevert. Dat laatste is de test op
-   `dateRangeType`.
-5. **Werk de veldencatalogi in dit rapport bij** met de gemeten waarden en vervang elke
-   "UNKNOWN — niet vastgelegd" door een echte sample, met `excludeContactInfo: true` aan de
-   API-kant in plaats van achteraf redigeren.
-6. **Laat de config-builder de v2-configuratie bouwen.** Wijzigt ten opzichte van vandaag:
-   `base_url`, `auth_grant_type`, `auth_token_endpoint`, scope, het vervallen refresh-token-template,
-   `url_path` per entiteit (let op de hoofdletter in `Statistics`), `output_record_key` per entiteit,
-   `ResultCountKey`, en `rate_limit_delay`. Ongewijzigd: `strategy`, `PageSize`, `ChunkSize`,
-   `batch_size`, watermerkformaat en -overlap.
-7. **Herschrijf `03_schema.py` en `04_transforms.py`** naar camelCase. Neem in dezelfde slag een
-   besluit over `InkoopPrijs` (bron `BuyingPrice` vervalt) en `Landnaam` (wordt `countryCode`), en
-   neem `discountName`, `discountCode`, `priceTypeName`, `eventName`, `performerName`,
-   `creationDate` en `modificationDate` op.
-8. **Draai in DEV, en vergelijk op rijaantal en op som per dag** tegen de laatste v1-run over
-   hetzelfde venster. Verschil in rijaantal wijst op `dateRangeType`; verschil in bedragen op een
-   veldmapping.
-9. **Verlaag `rate_limit_delay` stapsgewijs** en meet. Ga niet in een keer van 125 naar 0,5: verlaag,
-   draai een volledige chunk, kijk of er 409 of 429 terugkomt.
-10. **Promoveer naar PRD** volgens de normale promotiepoort, met de v1-configuratie nog intact.
-11. **Faseer het refresh-token-secret uit** en werk het configuratiesjabloon bij dat deze bron als
-    canoniek voorbeeld van het refresh-token-patroon noemt. Pas na een aantoonbaar stabiele periode
-    op v2.
-
-### Terugvalpad
-
-Het terugvalpad is bewust goedkoop, en dat is de belangrijkste reden dat dit een JA-MITS kan zijn
-in plaats van een NEE.
-
-- **Tot stap 10:** er verandert niets aan de draaiende v1-connector. Stoppen kost het werk, niet de
-  productie.
-- **Na stap 10, bij een probleem in PRD:** zet de bronconfiguratie terug op de v1-waarden
-  (`base_url`, `auth_grant_type`, `auth_token_endpoint`, `url_path`, `output_record_key`,
-  `ResultCountKey`, `rate_limit_delay`) en herstel het vorige paar `03_schema.py` /
-  `04_transforms.py`. Dat is een configuratieterugrol plus twee bestanden, geen datamigratie.
-- **Wat het terugvalpad open houdt:** het `refresh-token`-secret **niet** verwijderen tot stap 11.
-  Zonder dat secret is v1 niet meer bereikbaar en is er geen weg terug.
-- **Wat er met de data gebeurt:** Silver laadt incrementeel met SCD-type 1 en houdt geen historie.
-  Terugrollen betekent dus dat de v2-kolommen die v1 niet levert leeg blijven, niet dat er data
-  verloren gaat. Reken er wel op dat de eerste v2-run de hele tabel als gewijzigd ziet: de
-  hash over de niet-sleutelkolommen verandert zodra er kolommen bij komen of weggaan.
-
-## Entiteitenoverzicht
-
-| Entiteit | Endpointpad | Binnen scope | Bovenliggende entiteit | Toelichting |
-|---|---|---|---|---|
-| `baskets` | `POST /api/v2/Statistics/baskets` | Ja | — | Geneste arrays: payments, reservations, cancellations, partialCancellation, contact |
-| `sold_tickets` | `POST /api/v2/Statistics/sold-tickets` | Ja | — | Breedste entiteit (72 velden sinds `discountName`) |
-| `sold_subscriptions` | `POST /api/v2/Statistics/sold-subscriptions` | Ja | — | 47 velden sinds `discountName` |
-| `ticket_scans` | `POST /api/v2/Statistics/scans` | Ja | — | 47 velden. **Geen modified*-filter** — zie hieronder |
-| `cancellations` | `POST /api/v2/Statistics/cancellations` | Ja | — | 12 velden |
-| *Alle overige tags* | `Reservations`, `Pos`, `Contacts`, `Payments`, `Webhooks`, … (nog 25) | Nee | — | Buiten scope — geen functionele vraag |
-
-De vijf entiteiten binnen scope komen **1-op-1** overeen met de vijf entiteiten die al op v1 draaien
-(`baskets`, `ticket_scans`, `sold_tickets`, `sold_subscriptions`, `cancellations` in
-`client-configs/{env}/ticketcounter/03_schema.py`). De entiteitsnamen moeten ongewijzigd blijven.
-
-**Omgevingen:** de bron levert per omgeving een eigen set inloggegevens; de omgevingsnaam wordt in de
-secret-namen ingevuld via `{environment}`. Daarnaast bestaat er aan de kant van de leverancier een
-testomgeving (`apiv2test`) die voor validatie bruikbaar is zodra er v2-inloggegevens zijn.
-
-## Paginering en ingestie per entiteit
-
-> De precieze POST-body die elk endpoint verwacht — filtervelden per entiteit, `offset`/`limit` en de
-> enum-waarden van `StatisticsFilterDateRangeType` — is gedocumenteerd in
-> [request-body-contract.md](#ticketcounter-v2--contract-van-de-request-body).
-
-De paginering is **identiek voor alle vijf entiteiten**: numerieke `offset` + `limit` in de body, waarbij
-`offset` en `resultCount` in de respons worden teruggegeven. De response-envelope heeft voor alle vijf
-dezelfde vorm: `succeeded`, `errorMessage`, `isRedirect`, `redirectUrl`, `displayError`, `errorCode`,
-`offset`, `resultCount`, plus één record-array.
-
-**Strategie:** `chunk_offset` voor alle vijf — gelijk aan de strategie die v1 al gebruikt. Die geeft chunking
-op datumbereik (de v1-connector chunkt 30 dagen per keer) met offset-paginering binnen elke chunk.
-`offset` alleen zou alleen werken als de volledige historie in één datumvenster past.
-
-### baskets / sold_tickets / sold_subscriptions / cancellations
-
-- **Strategie:** `chunk_offset`
-- **WatermarkType:** `date`
-- **UrlPath:** `api/v2/Statistics/{baskets|sold-tickets|sold-subscriptions|cancellations}`
-- **ExtraParams:** moeten mee in de **body**, niet in de query-string (hiaat in het framework)
-- **Output.RecordKey / RecordType:** `baskets` / `soldTickets` / `soldSubscriptions` / `cancellations` — `keyed`
-- **StrategyDetails:** `Pagination.OffsetParam: offset`, `PageSizeParam: limit`, `PageSize: 10000`,
-  `ResultCountKey: resultCount`; `LoopChunks.ChunkType: days`, `ChunkSize: 30`
-- **WatermarkDetails:** `ParamStart: modifiedFrom`, `ParamEnd: modifiedTo` (voorkeur — echte
-  change-data capture), of `fromDate`/`toDate` + `dateRangeType` voor vensters op evenementdatum
-- **Extraction.BatchSize / MaxTotalRecords:** `150000` / `None` (spiegelt v1)
-
-### ticket_scans
-
-- Zelfde als hierboven, **behalve**: `modifiedFrom`/`modifiedTo` en `dateRangeType` bestaan niet.
-- **WatermarkDetails:** `ParamStart: fromDate`, `ParamEnd: toDate` — het venster filtert op **scandatum**,
-  dus laat binnenkomende wijzigingen op een al ingelezen scan kunnen niet via het watermark worden
-  gedetecteerd.
-- **Output.RecordKey:** `scans`
 
 ## Rate limits
 
@@ -639,227 +294,97 @@ HTTP 409
 "You may only perform this action every 120 seconds."
 ```
 
-Een aanroep op een **ander** endpoint direct na die 409 geeft HTTP 200. De afkoeltijd is dus
-**per endpoint**, niet per token en niet per client. Dat is nergens gedocumenteerd en verklaart
-waarom de bestaande configuratie een `rate_limit_delay` van 125 draagt: seconden, met marge.
+Een aanroep op een **ander** endpoint direct na die 409 geeft HTTP 200. De afkoeltijd geldt dus
+**per endpoint**, niet per token en niet per client. Dat is nergens gedocumenteerd en verklaart de
+`rate_limit_delay` van 125 in de bestaande configuratie: seconden, met marge. Praktisch gevolg: een
+volledige herlading kost minimaal `aantal_chunks × aantal_pagina's × 120 s` per entiteit. Vijf
+entiteiten kunnen wel parallel, want ze delen de afkoeltijd niet.
 
-Praktisch gevolg: een volledige herlading kost minimaal `aantal_chunks x aantal_pagina's x 120 s`
-per entiteit. Vijf entiteiten kunnen wel parallel, want ze delen de afkoeltijd niet.
+### v2 — niets gedocumenteerd, en niets waargenomen
 
-### v2 — niets gedocumenteerd
-
-- De spec bevat geen tekst over rate limits, throttling of quota.
-- Op geen enkel Statistics-endpoint is een `429` gedeclareerd. `429 Too Many Requests` komt in de
-  hele spec een keer voor, op `POST /api/v2/WaitingRoom/claim`.
-- De enige harde limiet is een **body-limiet**, geen rate limit: `limit` maximaal 100 000 rijen per
+- De spec bevat geen tekst over rate limits, throttling of quota. Op geen enkel Statistics-endpoint
+  is een `429` gedeclareerd; `429 Too Many Requests` komt in de hele spec één keer voor, op
+  `POST /api/v2/WaitingRoom/claim`.
+- **Gemeten 04-09-2026:** acht aanroepen direct achter elkaar op hetzelfde endpoint, plus in totaal
+  circa veertig aanroepen binnen een half uur, elk met een eigen tokenaanvraag, verdeeld over alle
+  vijf endpoints en beide omgevingen. **Geen enkele 409 en geen enkele 429.** Ook geen vertraagde
+  respons of andere aanwijzing van throttling.
+- De enige harde grens is een **body-limiet**, geen rate limit: `limit` maximaal 100 000 rijen per
   call, standaard 1000.
-- `RateLimitDelay: 0.5` is een veilige startwaarde, geen gemeten waarde. De generieke client
-  herhaalt `429` al met de `Retry-After`-header en `409` met lineaire backoff, dus een
-  ongedocumenteerde limiet leidt tot vertraging in plaats van uitval.
+- Dat staat scherp tegenover v1. Als deze waarneming standhoudt, is dít de grootste winst van de
+  migratie — een herlading die op v1 uren duurt, wordt op v2 begrensd door bandbreedte in plaats
+  van door afkoeltijd.
+- **Voorbehoud:** "niet waargenomen" is geen "bestaat niet". Verlaag `rate_limit_delay` stapsgewijs
+  en meet; de generieke client herhaalt een `429` al met `Retry-After` en een `409` met lineaire
+  backoff, dus een ongedocumenteerde limiet leidt tot vertraging in plaats van uitval.
 
-**Of v2 de afkoeltijd van 120 seconden loslaat, is niet vastgesteld** — dat vraagt een werkend
-token. Het is wel de grootste potentiele winst van de migratie, groter dan het veld waar de
-leveranciersmelding over gaat.
+## Entiteitenoverzicht
 
-## Velden en voorbeeld-JSON per entiteit
+| Entiteit | Endpointpad (v2) | Binnen scope | Bovenliggende entiteit | Toelichting |
+|---|---|---|---|---|
+| `baskets` | `POST /api/v2/Statistics/baskets` | Ja | — | Geneste arrays en één genest object; zie Response Shape |
+| `sold_tickets` | `POST /api/v2/Statistics/sold-tickets` | Ja | — | Breedste entiteit (contract: 72 velden) |
+| `sold_subscriptions` | `POST /api/v2/Statistics/sold-subscriptions` | Ja | — | Contract: 47 velden |
+| `ticket_scans` | `POST /api/v2/Statistics/scans` | Ja | — | Contract: 47 velden. **Geen `modified*`-filter** |
+| `cancellations` | `POST /api/v2/Statistics/cancellations` | Ja | — | Contract: 12 velden |
+| *Alle overige tags* | `Reservations`, `Pos`, `Contacts`, `Payments`, `Webhooks`, … (nog 26) | Nee | — | Buiten scope; inventaris in [Verzamel-endpoints](#verzamel-endpoints-v2--dimensie--en-referentiebronnen) |
 
-Volledige typeoverzichten per veld zijn opgesplitst in catalogi per entiteit om de documentlimiet van 250 regels
-te respecteren (`contributing/document-standards.md`):
+De vijf entiteiten binnen scope komen **1-op-1** overeen met de vijf die al op v1 draaien. De
+entiteitsnamen in de configuratie moeten ongewijzigd blijven; alleen `url_path` en
+`output_record_key` veranderen.
 
-| Entiteit | Veldencatalogus | Velden | Record key in respons |
+**De v1-paden en hun recordsleutels, ter vergelijking** (gemeten 28-08-2026):
+
+| Entiteit | `url_path` (v1) | Recordsleutel v1 | Recordsleutel v2 |
 |---|---|---|---|
-| `baskets` | [fields-baskets.md](#ticketcounter-v2--veldencatalogus-baskets) | 16 (+4 sub-schema's) | `baskets` |
-| `sold_tickets` | [fields-sold-tickets.md](#ticketcounter-v2--veldencatalogus-sold-tickets) | 72 | `soldTickets` |
-| `sold_subscriptions` | [fields-sold-subscriptions.md](#ticketcounter-v2--veldencatalogus-sold-subscriptions) | 47 | `soldSubscriptions` |
-| `ticket_scans` | [fields-scans.md](#ticketcounter-v2--veldencatalogus-scans) | 47 | `scans` |
-| `cancellations` | [fields-cancellations.md](#ticketcounter-v2--veldencatalogus-cancellations) | 12 | `cancellations` |
+| `sold_tickets` | `api/v1/statistics/soldtickets/nl-NL` | `SoldTicketsInfo` | `soldTickets` |
+| `baskets` | `api/v1/statistics/baskets` | `Baskets` | `baskets` |
+| `ticket_scans` | `api/v1/statistics/ticketScans/nl-NL` | `TicketScanInfo` | `scans` |
+| `sold_subscriptions` | `api/v1/statistics/soldsubscriptions/nl-NL` | `SoldSubscriptionsInfo` | `soldSubscriptions` |
+| `cancellations` | `api/v1/statistics/cancellations/nl-NL` | `Cancellations` | `cancellations` |
 
-**Voorbeeld-JSON voor v2: UNKNOWN voor alle vijf entiteiten — niet vastgelegd.** De bestaande inloggegevens
-worden door v2 geweigerd (`invalid_client`, opnieuw bevestigd op 2026-08-28), dus er kon geen live call worden
-gedaan. Er zijn geen voorbeelddata verzonnen. De voorbeelden moeten worden vastgelegd zodra er
-v2-inloggegevens zijn afgegeven, **voordat** de config-builder de schema's definitief maakt.
+De v1-recordsleutel volgt geen patroon: twee met achtervoegsel `Info`, één in het enkelvoud
+daarvan, twee kale meervouden. In v2 zijn het alle vijf camelCase-meervouden. Wie ze uit de oude
+configuratie overneemt, zit er op alle vijf naast — en dat faalt stil, met "0 rijen" in plaats van
+een fout.
 
-**Voor v1 is dit sinds 2026-08-28 wel gemeten.** Alle vijf entiteiten zijn live bemonsterd; de veldenlijsten en
-recordsleutels staan in [Huidige versie per entiteit](#huidige-versie-per-entiteit-gemeten) en de velddelta per
-entiteit in [Velddelta per entiteit](#velddelta-per-entiteit). De samples zelf staan niet in dit rapport: ze
-bevatten persoonsgegevens en v1 kent geen schakelaar aan de API-kant om die te onderdrukken.
+## Contract van de request body
 
-`baskets` heeft sub-schema's nodig voor geneste structs (`PaymentInfo`, `BasketReservationInfo`,
-`PartialCancelInfo`, `BasketContactInfo`) — gedocumenteerd in de bijbehorende catalogus.
-
-## Belangrijkste datakenmerken per entiteit
-
-| Entiteit | Natuurlijke PK | Laatst-gewijzigd-veld | Incrementeel ophalen? | Volledige periode opnieuw ophalen voor deletes? | Kandidaat voor partitionering |
-|---|---|---|---|---|---|
-| `baskets` | `basketKey` (uuid, niet-null) | **niet aanwezig in de payload** | Ja (`modifiedFrom`/`modifiedTo`) | Ja — annuleringen komen binnen als geneste arrays | `basketConfirmed` |
-| `sold_tickets` | **UNKNOWN — geen enkele sleutel.** Kandidaten: `reservationKey` + `ticketCode` + `priceKey` | `modificationDate` | Ja | Ja — `cancelDate` wordt in place gezet | `saleDate` / `confirmedDate` |
-| `sold_subscriptions` | `subscriptionKey` (uuid, niet-null) | `modificationDate` | Ja | Ja — `cancelDate` wordt in place gezet | `saleDate` |
-| `ticket_scans` | `scanId` (int, niet-null) | **geen** | Deels — alleen op `scanDate` | Onwaarschijnlijk (scans zijn append-only) | `scanDate` |
-| `cancellations` | `reservationKey` (+`ticketCode` bij meerdere plaatsen) | `modificationDate` | Ja | Nee — deze entiteit *is* de delete-feed | `cancelDate` |
-
-- **Geeft de API updates op bestaande records terug?** Ja voor de vier entiteiten die `modifiedFrom` aanbieden —
-  dat filter is alleen zinvol als records na aanmaak nog muteren.
-- **Asymmetrie bij `baskets` (belangrijk):** de entiteit accepteert `modifiedFrom`/`modifiedTo`, maar `BasketInfo`
-  bevat **geen** veld `modificationDate`. Je kunt dus wel filteren op wijziging, maar de wijzigingstimestamp niet
-  opslaan, en geen max-kolom-watermark uit de payload berekenen. Het watermark moet worden afgeleid uit het
-  request-venster (`_compute_new_marker_from_chunks`), wat de strategie `chunk_offset` al doet.
-- **Datavolume:** **UNKNOWN** — niet meetbaar zonder inloggegevens. De v1-volumes zijn de beste indicatie
-  (v1 gebruikt `BatchSize: 150000`, wat duidt op recordaantallen in de hoge zes cijfers voor baskets).
-
-## Benodigde uitbreidingen aan general-notebooks
-
-> **Deze sectie is op 2026-08-28 herzien.** Het rapport van 2026-07-17 stelde dat de `POST`-tak in
-> `BaseAPIClient._request()` onbereikbare dode code was die alleen `params` als query-string kon
-> versturen. Dat klopt niet meer. De client is sindsdien uitgebreid met een echte JSON-body
-> (`json_body=`), inclusief afhandeling van fouten die binnen een HTTP 200 aankomen. De blokkade is
-> daarmee **verschoven, niet verdwenen**: het transport is er, de body-opbouw voor een REST-filter
-> niet.
-
-| Benodigde functionaliteit | Reden | Betrokken notebook | Status |
-|---|---|---|---|
-| REST-`POST` met JSON-**filter**body | Alle vijf v2 Statistics-endpoints zijn `POST` en nemen filters en paginering in de body. De client kan een JSON-body sturen, maar bouwt hem alleen als **GraphQL**-document. | `notebook_Config_API.py` — `get_entity()` / `_graphql_request()` | **Blokkade** |
-| `Method='POST'` zonder GraphQL-blok toestaan | De configuratievalidatie wijst `Method='POST'` expliciet af als er geen `GraphQL`-blok bij zit, en wijst `ExtraParams` in combinatie met `Method='POST'` ook af. | `notebook_Config_API.py` — configuratievalidatie | **Blokkade** |
-| Paginering, watermerk en `ExtraParams` in de body binden | `_build_date_params()` en `OffsetPaginationExtractor._iter_offset_pages()` produceren waarden die via `_rest_request()` altijd query-parameters worden. | `notebook_Config_API.py` | **Blokkade** |
-| Configureerbare OAuth2-`Scope` | De notebook leest `AuthDetails.OAuth2.Scope` en stuurt hem mee, maar er is geen kolom in `source_connection_configs` en de generator emitteert `Scope` niet. | configuratieschema + configuratiegenerator | **Blokkade indien v2 de scope verplicht stelt** |
-
-**Bewijs, zodat dit niet opnieuw hoeft te worden uitgezocht:**
-
-- `_request()` accepteert `method="GET"|"POST"` en een `json_body`; de POST-tak doet
-  `self.session.post(url, headers=headers, json=json_body, timeout=60)` wanneer `json_body` gezet
-  is. Het transport is dus aanwezig en getest.
-- `get_entity()` kiest de body-opbouw met precies een voorwaarde:
-  `if details.get("Method") == "POST" and details.get("GraphQL")`. Zonder `GraphQL`-blok valt hij
-  terug op `_rest_request()`, en die bouwt uitsluitend een query-string.
-- `_graphql_request()` weigert zonder querydocument: hij verwacht een GraphQL-document uit de
-  sectie met entity-queries. Een REST-filterobject past daar niet in.
-- De configuratievalidatie bevat drie regels die de weg dichtzetten: `Method` is alleen `'POST'`
-  toegestaan en dan alleen voor GraphQL; `Method='POST'` **vereist** een `GraphQL`-blok;
-  `ExtraParams` is **niet** toegestaan met `Method='POST'`.
-- De configuratiegenerator bouwt het `OAuth2`-blok uit `GrantType`, `TokenEndpoint`,
-  `ClientIdSecretTemplate`, `ClientSecretSecretTemplate` en eventueel `RefreshTokenSecretTemplate`.
-  `Scope` komt er niet in voor, en er is geen kolom die hem zou kunnen leveren.
-
-**Wat al wel wordt ondersteund en dus niet hoeft te worden gebouwd:** paginering met `chunk_offset`
-en `offset` (`OffsetParam`, `PageSizeParam`, `PageSize`, `ResultCountKey`), datum-chunking via
-`LoopChunks.ChunkType: days`, markerberekening uit chunk-vensters, `client_credentials`-authenticatie,
-en afhandeling van herhaalpogingen bij `401`, `409`, `429` en `5xx` — inclusief respect voor
-`Retry-After`.
-
-> **Actie:** maak de user story voor de REST-POST-body aan **voordat** de config-builder start. De
-> configuratie kan niet als kopie van v1 worden gebouwd, en ook niet als kopie van de bestaande
-> GraphQL-bron.
-
-## Openstaande vragen / UNKNOWNs
-
-Genummerd, met de status na deze run.
-
-1. **v2-inloggegevens — BLOKKEREND, bevestigd op 2026-08-28.** De bestaande client-id en
-   client-secret geven `invalid_client` op v2 test en v2 prod, met en zonder scope, en ook met de
-   `refresh_token`-grant. Dezelfde secrets werken wel op v1. Er zijn nieuwe v2-client-inloggegevens
-   nodig, per omgeving.
-2. **Vulgraad van `discountName` — UNKNOWN.** Geblokkeerd door (1). Zie
-   [Discount Name](#discount-name--de-leveranciersmelding) voor de exacte call die het antwoord
-   geeft zodra er een token is.
-3. **Voorbeeld-JSON per entiteit voor v2 — UNKNOWN.** Geblokkeerd door (1). Vereist voordat de
-   schema's definitief worden gemaakt: de contracttypes moeten tegen echte responses worden
-   bevestigd, met name de datum-tijdopmaak en of een `text/plain`-respons als JSON parseert.
-   *Voor v1 is dit sinds 2026-08-28 wel vastgelegd — alle vijf entiteiten zijn live bemonsterd.*
-4. **Semantiek van `resultCount` in v2 — UNKNOWN.** De offset-lus stopt zodra
-   `resultCount < PageSize`. Is `resultCount` het totaal in plaats van de paginatelling, dan
-   eindigt die lus niet correct. De spec definieert het niet. *In v1 is het gemeten en is het de
-   paginatelling.*
-5. **Rate limits op v2 — UNKNOWN.** Niets gedocumenteerd, geen `429` gedeclareerd. *Voor v1 is de
-   limiet nu gemeten: 120 seconden per endpoint, afgedwongen met HTTP 409.*
-6. **Waarop filteren `fromDate` / `toDate` in v1? — UNKNOWN, en dit is nieuw.** v2 kent
-   `dateRangeType` met `ConfirmationDate` als standaard. Filtert v1 op een andere datum, dan levert
-   hetzelfde venster in v2 een andere rijenset zonder dat er iets faalt. Vaststellen door de
-   rijaantallen over hetzelfde venster te vergelijken, of navragen bij de leverancier.
-7. **Is de scope `TC.Tickets.API` verplicht bij `client_credentials`? — UNKNOWN.** Niet te testen
-   zolang de client onbekend is bij de identiteitsserver. Bepaalt of het configuratiehiaat rond
-   `Scope` een blokkade is of een nette-to-have.
-8. **Delen de omgevingen op v2 een base-URL? — UNKNOWN, ongeverifieerd sinds 2026-07-17.** Op v1 is
-   het een host met per omgeving een eigen set inloggegevens. Of v2 dat model aanhoudt, is niet
-   vastgesteld.
-9. **Primaire sleutel van `sold_tickets` — UNKNOWN, ongeverifieerd sinds 2026-07-17.** Er bestaat
-   geen enkel niet-null sleutelveld in het contract. De v1-connector gebruikt `TicketCode` als
-   sleutel; of die in v2 uniek blijft, moet met echte data worden bevestigd.
-10. **Datavolumes op v2 — UNKNOWN.** Geblokkeerd door (1).
-11. **Uitfaseringsdatum van v1 — UNKNOWN.** Zie [Uitfasering van v1](#uitfasering-van-v1): niet in
-    de spec, geen publieke documentatie, geen changelog. Alleen de leverancier weet dit.
-12. **Bevat `apiv2test` bruikbare data voor validatie? — UNKNOWN, ongeverifieerd sinds 2026-07-17.**
-
-## Vragen aan de leverancier
-
-Deze vragen kan dit onderzoek niet zelf beantwoorden; ze bepalen wel de planning. Ze zijn
-geformuleerd om in een keer gesteld te kunnen worden.
-
-1. **Inloggegevens.** Onze bestaande client-id en client-secret werken op `api.ticketcounter.net`
-   maar geven `invalid_client` op `apiv2.ticketcounter.eu/connect/token` en op
-   `apiv2test.ticketcounter.eu/connect/token`. Kan de bestaande client worden uitgebreid naar v2,
-   of moeten er nieuwe client-inloggegevens worden uitgegeven — en dan graag per omgeving,
-   afzonderlijk.
-2. **Scope.** Is `scope=TC.Tickets.API` verplicht bij de `client_credentials`-grant, of geeft de
-   identiteitsserver zonder scope een bruikbaar token?
-3. **Uitfasering.** Is er een einddatum voor de `Statistics`-endpoints op `api.ticketcounter.net`?
-   Let op dat dit een andere API is dan de spec die de Swagger-UI op de v2-host als "V1"
-   publiceert. Waar wordt een uitfasering aangekondigd — is er een changelog, een statuspagina of
-   een mailinglijst?
-4. **`resultCount`.** Bevat `resultCount` in de v2-Statistics-responses het aantal rijen op de
-   opgevraagde pagina, of het totaal aantal gevonden rijen?
-5. **`dateRangeType` versus v1.** Op welke datum filteren `fromDate` en `toDate` op de
-   v1-`Statistics`-endpoints? Komt dat overeen met `dateRangeType = 0 (ConfirmationDate)` in v2, of
-   met `CreationDate` of `VisitDate`?
-6. **Rate limits op v2.** De v1-endpoints geven HTTP 409 met "You may only perform this action
-   every 120 seconds." Geldt op v2 een vergelijkbare limiet? Zo ja, welke, en per wat — per
-   endpoint, per client of per tenant?
-7. **Twee vervallen velden.** `BuyingPrice` en `CountryName` zitten wel in de v1-response en niet in
-   `SoldTicketsInfo` op v2. Is daar een vervanger voor, of vervallen ze bewust?
-8. **Testomgeving.** Bevat `apiv2test.ticketcounter.eu` representatieve data voor onze omgevingen,
-   zodat we de migratie daar kunnen valideren voordat we op productie schakelen?
-
----
-
-> De secties hieronder beschrijven het v2-contract per entiteit. Ze staan hier inline zodat het rapport
-> op zichzelf staat; de config-builder heeft ze in hun geheel nodig.
-
-## Ticketcounter v2 — contract van de request body
-
-Het filter- en pagineringsobject dat elk `Statistics`-endpoint in de **POST-body** verwacht.
-Onderdeel van [ticketcounter_research.md](../ticketcounter_research.md).
-
-### Inhoudsopgave
-
-| Sectie | Omschrijving |
-|---------|-------------|
-| [Gedeelde pagineringsvelden](#gedeelde-pagineringsvelden) | offset / limit, op elke entiteit |
-| [Datumfiltering per entiteit](#datumfiltering-per-entiteit) | Welke filters waar bestaan |
-| [StatisticsFilterDateRangeType](#statisticsfilterdaterangetype) | Enum-waarden |
-
-Alle vijf endpoints nemen een filterobject in de **request body** (niet in de query-string).
+Alle vijf endpoints nemen hun filter- en pagineringsobject in de **request body**, niet in de
+query-string.
 
 ### Gedeelde pagineringsvelden
 
-| Body-veld | Type | Betekenis |
-|---|---|---|
-| `offset` | `int32` | Aantal over te slaan rijen |
-| `limit` | `int32` | Maximaal aantal terug te geven rijen. **Max 100 000**, standaard 1000 |
+| Body-veld | Betekenis |
+|---|---|
+| `offset` | Aantal over te slaan rijen |
+| `limit` | Maximaal aantal terug te geven rijen. **Max 100 000**, standaard 1000 |
 
-### Datumfiltering per entiteit
+### Filtervelden per entiteit — geverifieerd op het contract, 04-09-2026
 
 | Body-veld | baskets | sold-tickets | sold-subscriptions | cancellations | scans |
 |---|---|---|---|---|---|
-| `fromDate` / `toDate` (date-time) | ja | ja | ja | ja | ja |
-| `modifiedFrom` / `modifiedTo` (date-time) | ja | ja | ja | ja | **nee** |
-| `dateRangeType` (enum) | ja | ja | ja | ja | **nee** |
-| `excludeContactInfo` (bool) | ja | ja | — | — | ja |
-| `eventKey` (uuid) | — | ja | — | ja | — |
-| `languageCode` (string) | — | ja | — | — | ja |
-| Overig | — | — | — | `includeTicketCodeValues` (bool) | `ticketScansOnly`, `subscriptionScansOnly` (bool) |
+| `fromDate` / `toDate` | ja | ja | ja | ja | ja |
+| `modifiedFrom` / `modifiedTo` | ja | ja | ja | ja | **nee** |
+| `dateRangeType` | ja | ja | ja | ja | **nee** |
+| `excludeContactInfo` | ja | ja | ja | **nee** | ja |
+| `eventKey` | — | ja | — | ja | — |
+| `languageCode` | — | ja | — | — | ja |
+| Overig | — | — | — | `includeTicketCodeValues` | `ticketScansOnly`, `subscriptionScansOnly` |
 
-### StatisticsFilterDateRangeType
+**Bevestigd: `scans` kent geen `modifiedFrom`/`modifiedTo` en geen `dateRangeType`.** Dat was een
+openstaand punt uit de vorige versie en is nu op het contract nagelopen: het schema
+`GetScansMessage` draagt uitsluitend `fromDate`, `toDate`, `excludeContactInfo`, `ticketScansOnly`,
+`subscriptionScansOnly`, `offset`, `limit` en `languageCode`. `ScanInfo` bevat bovendien geen
+`creationDate` of `modificationDate` — er is dus aan geen van beide kanten een wijzigingsveld.
 
-`StatisticsFilterDateRangeType` (`TC.Common.Models.Enums`) — integer-enum die bepaalt op welke datum
-`fromDate`/`toDate` filteren:
+**Ook bevestigd: `cancellations` kent geen `excludeContactInfo`.** Dat is geen omissie maar
+consistentie: `CancellationsInfo` bevat geen enkel persoonsgegeven, dus er is niets te
+onderdrukken.
+
+### `StatisticsFilterDateRangeType`
+
+Integer-enum die bepaalt op welke datum `fromDate`/`toDate` filteren:
 
 | Waarde | Naam | Betekenis |
 |---|---|---|
@@ -867,871 +392,639 @@ Alle vijf endpoints nemen een filterobject in de **request body** (niet in de qu
 | `1` | `CreationDate` | Aanmaakdatum van de reservering |
 | `2` | `VisitDate` | Bezoekdatum van de reservering |
 
----
+> **Dit is een valkuil bij de migratie.** Op welke datum `fromDate`/`toDate` in **v1** filteren is
+> niet gedocumenteerd en niet vastgesteld. Is dat niet de bevestigingsdatum, dan levert hetzelfde
+> venster op v2 een andere rijenset op zonder dat er iets faalt. Zie
+> [Openstaande vragen](#openstaande-vragen--unknowns).
 
-## Ticketcounter v2 — veldencatalogus `baskets`
+## Paginering en ingestie per entiteit
 
-Afgeleid van OpenAPI-schema `TC.Common.Models.Statistics.BasketInfo` (record key `baskets`).
-Onderdeel van [ticketcounter_research.md](../ticketcounter_research.md).
+Dit is sectie 2 van de configuratie. Alle waarden hieronder zijn gemeten op 04-09-2026, tenzij
+anders vermeld.
 
-### Inhoudsopgave
+### Wat voor alle vijf geldt
 
-| Sectie | Omschrijving |
-|---------|-------------|
-| [Recordvelden](#recordvelden) | Typeoverzicht per veld voor één `baskets`-record |
-| [Sub-schema's](#sub-schemas) | Geneste struct-definities waarnaar hierboven wordt verwezen |
-| [Voorbeeld-JSON](#voorbeeld-json) | Status van een echte responsvoorbeeld |
+**Paginering: numerieke offset in de body.** `offset` en `limit` gaan mee in het JSON-document; het
+omhulsel geeft `offset` en `resultCount` terug.
 
-### Recordvelden
+**`resultCount` telt de rijen op déze pagina, niet het totaal.** Gemeten op alle vijf entiteiten:
 
-| API-veld | Spark-type | Nullable | Toelichting |
+| Aanroep | Rijen terug | `resultCount` | `offset` in de respons |
 |---|---|---|---|
-| `basketConfirmed` | `TimestampType` | ja |  |
-| `basketNumber` | `StringType` | ja |  |
-| `basketKey` | `StringType` | nee | UUID. |
-| `externalBasketNumber` | `StringType` | ja |  |
-| `externalInvoiceId` | `StringType` | ja |  |
-| `posFirstName` | `StringType` | ja |  |
-| `posMiddleName` | `StringType` | ja |  |
-| `posLastName` | `StringType` | ja |  |
-| `posName` | `StringType` | ja |  |
-| `posGroupName` | `StringType` | ja |  |
-| `payments` | `ArrayType(StructType)` (sub-schema `PaymentInfo`) | ja |  |
-| `reservations` | `ArrayType(StructType)` (sub-schema `BasketReservationInfo`) | ja |  |
-| `cancellations` | `ArrayType(StructType)` (sub-schema `BasketReservationInfo`) | ja |  |
-| `partialCancellation` | `ArrayType(StructType)` (sub-schema `PartialCancelInfo`) | ja |  |
-| `invitationCodes` | `ArrayType(StringType)` | ja |  |
-| `contact` | `StructType` (zie sub-schema `BasketContactInfo`) | nee |  |
+| `limit=2`, `offset=0` | 2 | 2 | 2 |
+| `limit=2`, `offset=2` | 2 | 2 | 4 |
+| `limit=2` op een venster met één treffer | 1 | 1 | 1 |
+| `limit=2000`, volledig gevulde pagina | 2000 | 2000 | 2000 |
+| `limit=2000`, laatste (deel)pagina | minder dan `limit` | gelijk aan de rijen | gelijk aan de rijen |
 
-### Sub-schema's
+Twee dingen volgen daaruit, en ze zijn allebei configuratierelevant:
 
-#### `PaymentInfo`
+1. **De stopconditie is `resultCount < limit`** — precies wat `OffsetPaginationExtractor` verwacht.
+   Zou `resultCount` het totaal zijn geweest, dan zou die lus nooit op tijd stoppen. Dit was in de
+   vorige versie een `UNKNOWN` met een expliciet risico; het is nu gemeten.
+2. **`offset` in de respons is de *volgende* offset**, niet de opgevraagde: het is
+   `verzonden offset + rijen op deze pagina`. Handig als cursor, maar het framework heeft hem niet
+   nodig — dat telt zelf op met `PageSize`, wat op hetzelfde neerkomt zolang een volle pagina
+   precies `limit` rijen draagt (gemeten: dat klopt).
 
-| API-veld | Spark-type | Nullable | Toelichting |
-|---|---|---|---|
-| `payId` | `StringType` | ja |  |
-| `paymentType` | `StringType` | ja |  |
-| `paymentRemark` | `StringType` | ja |  |
-| `amount` | `DoubleType` | nee |  |
+**Zonder datumfilter komt er niets terug.** Een body met alleen `limit` geeft HTTP 200,
+`succeeded: true` en een **lege array** — op elke entiteit en in beide omgevingen getest. De bron
+levert dus géén "alles" bij een ontbrekend venster; hij levert niets. Dat is de gevaarlijkste
+uitkomst die er is, want een run die zijn startdatum kwijt is, meldt succes en laadt nul rijen.
+`WatermarkDetails.DefaultStart` is daarom niet optioneel, en de bestaande guard in
+`_build_date_params()` (die weigert bij een lege startdatum) is hier precies op zijn plaats.
 
-#### `BasketReservationInfo`
+**Strategie: `chunk_offset` voor alle vijf**, gelijk aan wat v1 al gebruikt — datumchunks met
+offset-paginering binnen elke chunk. `offset` alleen zou alleen werken als de volledige historie in
+één venster past. Beide strategienamen komen uit de allow-list van template `02a`.
 
-| API-veld | Spark-type | Nullable | Toelichting |
-|---|---|---|---|
-| `reservationKey` | `StringType` | nee | UUID. |
-| `reservationNumber` | `StringType` | ja |  |
-| `amount` | `DoubleType` | nee |  |
+**Transport: `Method: "POST"` met een `Body`-blok**, `ParamsIn: "body"` (de standaard), zodat de
+paginering, de `ExtraParams` en het datumvenster in het JSON-document landen in plaats van in de
+query-string.
 
-#### `PartialCancelInfo`
+### baskets / sold_tickets / sold_subscriptions / cancellations
 
-| API-veld | Spark-type | Nullable | Toelichting |
-|---|---|---|---|
-| `ticketcode` | `StringType` | ja |  |
-| `amount` | `DoubleType` | nee |  |
-| `reservationNumber` | `StringType` | ja |  |
+- **Strategy:** `chunk_offset`
+- **WatermarkType:** `date`
+- **UrlPath:** `api/v2/Statistics/{baskets|sold-tickets|sold-subscriptions|cancellations}` — let op
+  de hoofdletter in `Statistics` en op het koppelteken in `sold-tickets` / `sold-subscriptions`
+- **ExtraParams:** `{"excludeContactInfo": true}` waar de klant geen contactgegevens wil laden
+  (niet beschikbaar op `cancellations`); op `cancellations` daarnaast
+  `{"includeTicketCodeValues": true}` — zie de waarschuwing hieronder
+- **Output.RecordKey / RecordType:** `baskets` / `soldTickets` / `soldSubscriptions` /
+  `cancellations` — `keyed`
+- **StrategyDetails:**
+  - `Method: "POST"`, `Body: {"Template": {}, "ParamsIn": "body"}`
+  - `Pagination.OffsetParam: offset`, `PageSizeParam: limit`, `PageSize: 10000`,
+    `ResultCountKey: resultCount`
+  - `LoopChunks.ChunkType: days`, `ChunkSize: 30`
+- **WatermarkDetails:** `ParamStart: modifiedFrom`, `ParamEnd: modifiedTo`,
+  `Format: "%Y-%m-%dT%H:%M:%S"`. **Gemeten: een body met alleen `modifiedFrom` en `limit` geeft
+  rijen terug op alle vier**, en de teruggegeven `modificationDate`-waarden liggen op of na de
+  opgegeven grens. Echte change-data capture is dus mogelijk — een verbetering ten opzichte van v1,
+  dat geen enkel wijzigingsveld draagt.
+- **Alternatief venster:** `fromDate`/`toDate` plus `dateRangeType`, wanneer een venster op
+  bevestigings-, aanmaak- of bezoekdatum gewenst is in plaats van op wijzigingsdatum. Dat is een
+  functionele keuze, geen technische.
+- **Extraction.BatchSize / MaxTotalRecords:** `150000` / `None` (spiegelt v1)
 
-#### `BasketContactInfo`
+> **`baskets` is asymmetrisch, en dat is belangrijk.** De entiteit accepteert
+> `modifiedFrom`/`modifiedTo`, maar `BasketInfo` bevat **geen** veld `modificationDate` — niet in
+> het contract en niet in een respons. Je kunt dus wel op wijziging filteren, maar de
+> wijzigingstimestamp niet opslaan en geen max-kolom-watermerk uit de payload berekenen. Het
+> watermerk moet uit het request-venster komen (`WatermarkDetails.Source: "parameter"`), wat
+> `chunk_offset` al doet.
 
-| API-veld | Spark-type | Nullable | Toelichting |
-|---|---|---|---|
-| `contactKey` | `StringType` | ja | UUID. Unieke sleutel van de koper. Een koper kan meer dan één aankoop hebben |
-| `name` | `StringType` | ja | Naam van de koper |
-| `email` | `StringType` | ja | E-mailadres van de koper |
-| `street` | `StringType` | ja | Straat van de koper |
-| `houseNumber` | `StringType` | ja | Huisnummer van de koper |
-| `postalCode` | `StringType` | ja | Postcode van de koper |
-| `cityName` | `StringType` | ja | Plaats van de koper |
-| `countryCode` | `StringType` | ja | Landcode van de koper |
-| `lat` | `DoubleType` | ja | Breedtegraad van het adres van de koper |
-| `lon` | `DoubleType` | ja | Lengtegraad van het adres van de koper |
-| `companyName` | `StringType` | ja | Bedrijfsnaam |
-| `firstName` | `StringType` | ja | Voornaam van de koper |
-| `middle` | `StringType` | ja | Tussenvoegsel van de koper |
-| `lastName` | `StringType` | ja | Achternaam van de koper |
-| `phoneNumber` | `StringType` | ja | Telefoonnummer van de koper |
-| `receiveNewsLetter` | `BooleanType` | ja | Geeft aan of de nieuwsbrief naar de koper gestuurd moet worden |
-| `gender` | `StringType` | ja | Geslacht |
-| `birthDate` | `TimestampType` | ja | Geboortedatum |
+> **`cancellations` zonder `includeTicketCodeValues` levert ononderscheidbare rijen.** Gemeten:
+> twee opeenvolgende records in dezelfde respons waren **byte-voor-byte identiek** — zelfde
+> `reservationKey`, zelfde `cancelDate`, zelfde bedragen. Het zijn twee geannuleerde plaatsen van
+> dezelfde reservering, en zonder `ticketCode` is er geen veld dat ze scheidt. Met
+> `includeTicketCodeValues: true` verschijnt `ticketCode` en verschillen ze wél. Zet die vlag aan,
+> anders is elke deduplicatie stroomafwaarts een gok. (Of de sleutel daarmee uniek **is**, telt
+> config-builder uit Bronze — dit is een waarneming over de parameter, niet over de data.)
 
-### Voorbeeld-JSON
+### ticket_scans
 
-**UNKNOWN — niet vastgelegd.** Er zijn geen werkende v2-inloggegevens; op 2026-08-28 opnieuw bevestigd
-(`invalid_client`, zie *Openstaande vragen* in het hoofdrapport). De typen hierboven zijn afgeleid van het
-gepubliceerde OpenAPI 3.0.4-contract, opgehaald op 2026-08-28, niet van een waargenomen respons. Er zijn geen
-voorbeelddata verzonnen.
+- Zelfde als hierboven, **behalve** het watermerk: `modifiedFrom`/`modifiedTo` en `dateRangeType`
+  bestaan hier niet.
+- **WatermarkDetails:** `ParamStart: fromDate`, `ParamEnd: toDate`,
+  `Format: "%Y-%m-%dT%H:%M:%S"`. Het venster filtert op **scandatum**. Een latere wijziging aan een
+  al ingelezen scan is dus niet via het watermerk te detecteren — en `ScanInfo` draagt ook geen
+  `modificationDate` om het aan te zien.
+- **Output.RecordKey:** `scans`
+- **ExtraParams:** `{"excludeContactInfo": true}`; optioneel `ticketScansOnly` /
+  `subscriptionScansOnly` om de feed te splitsen.
 
----
+> **`scans` gaf in de ene omgeving niets terug en in de andere wel.** In omgeving A leverde elk
+> beproefd venster — vier verschillende, verspreid over twee jaar — een **lege array** met
+> `succeeded: true`. In omgeving B gaf hetzelfde endpoint op hetzelfde venster meteen een volle
+> pagina. Het endpoint werkt dus; wat er ontbreekt is data (of een recht) in die ene omgeving. Dat
+> is een vraag aan de leverancier, geen defect in de configuratie — maar bouw de entiteit niet op
+> zonder te weten welke van de twee je voor je hebt.
 
-## Ticketcounter v2 — veldencatalogus `sold-tickets`
+## Response Shape per Entity
 
-Afgeleid van OpenAPI-schema `TC.Common.Models.Statistics.SoldTicketsInfo` (record key `soldTickets`).
-Onderdeel van [ticketcounter_research.md](../ticketcounter_research.md).
+> **Alleen de vorm.** Veldnamen, de recordsleutel, de datumopmaak en een geredigeerd
+> voorbeeldrecord. **Geen** types, vulgraden, volumes of kardinaliteit — die worden door
+> config-builder uit Bronze geteld.
 
-### Inhoudsopgave
+### Het omhulsel — identiek voor alle vijf
 
-| Sectie | Omschrijving |
-|---------|-------------|
-| [Recordvelden](#recordvelden-1) | Typeoverzicht per veld voor één `sold-tickets`-record |
-| [Voorbeeld-JSON](#voorbeeld-json-1) | Status van een echte responsvoorbeeld |
+**Waargenomen sleutels, in deze volgorde:** `{recordKey}`, `offset`, `resultCount`, `succeeded`,
+`isRedirect`, `displayError`.
 
-### Recordvelden
+Het **contract** declareert er drie meer: `errorCode`, `errorMessage`, `redirectUrl`. Die
+verschijnen alleen bij een fout (zie de 403-respons onder
+[Toegang per rol](#toegang-per-rol--buiten-statistics-is-het-403)). Bij een geslaagde aanroep
+ontbreken ze — wat ons bij de belangrijkste vormbevinding van dit rapport brengt.
 
-| API-veld | Spark-type | Nullable | Toelichting |
-|---|---|---|---|
-| `eventKey` | `StringType` | ja | UUID. Unieke sleutel van het evenement |
-| `type` | `StringType` | ja | Type van de aankoop |
-| `reservationKey` | `StringType` | ja | UUID. Unieke sleutel van de reservering. |
-| `performanceKey` | `StringType` | ja | UUID. Unieke sleutel van de voorstelling. |
-| `performanceSectionKey` | `StringType` | ja | UUID. Unieke sleutel van de sectie van de voorstelling |
-| `productName` | `StringType` | ja | Naam van het evenement en de artiest of het type ticket (prijstype) |
-| `eventName` | `StringType` | ja | Naam van het evenement |
-| `performerName` | `StringType` | ja | Naam van de artiest |
-| `saleDate` | `TimestampType` | nee | Datum waarop de bestelling is geplaatst |
-| `totalPrice` | `DoubleType` | nee | Verkoopprijs per plaats |
-| `price` | `DoubleType` | nee | Verkoopprijs per plaats |
-| `originalPrice` | `DoubleType` | ja | Oorspronkelijke verkoopprijs per plaats |
-| `nrOfSeats` | `IntegerType` | nee | Aantal plaatsen op dit ticket |
-| `channel` | `StringType` | ja | Waar het ticket is gekocht |
-| `contactHolderKey` | `StringType` | ja | UUID. Unieke sleutel van de koper. Een koper kan meer dan één aankoop hebben |
-| `name` | `StringType` | ja | Naam van de koper |
-| `email` | `StringType` | ja | E-mailadres van de koper |
-| `street` | `StringType` | ja | Straat van de koper |
-| `houseNumber` | `StringType` | ja | Huisnummer van de koper |
-| `postalCode` | `StringType` | ja | Postcode van de koper |
-| `cityName` | `StringType` | ja | Plaats van de koper |
-| `countryCode` | `StringType` | ja | Landcode van de koper |
-| `lat` | `DoubleType` | ja | Breedtegraad van het adres van de koper |
-| `lon` | `DoubleType` | ja | Lengtegraad van het adres van de koper |
-| `validFrom` | `TimestampType` | ja | Datum en tijd vanaf wanneer het ticket geldig is |
-| `validTo` | `TimestampType` | ja | Datum en tijd tot wanneer het ticket geldig is |
-| `companyName` | `StringType` | ja | Bedrijfsnaam |
-| `firstName` | `StringType` | ja | Voornaam van de koper |
-| `middle` | `StringType` | ja | Tussenvoegsel van de koper |
-| `lastName` | `StringType` | ja | Achternaam van de koper |
-| `phoneNumber` | `StringType` | ja | Telefoonnummer van de koper |
-| `receiveNewsLetter` | `BooleanType` | ja | Geeft aan of de nieuwsbrief naar de koper gestuurd moet worden |
-| `paymentMethod` | `StringType` | ja | Betaalmethode waarmee de bestelling is betaald |
-| `brancheID` | `StringType` | ja |  |
-| `cancelDate` | `TimestampType` | ja | Datum en tijd van annulering van de bestelling |
-| `reservationNumber` | `StringType` | ja | Nummer van de bestelling |
-| `language` | `StringType` | ja | NAam van de taal |
-| `salesChannel` | `StringType` | ja | Naam van het verkoopkanaal |
-| `resellerName` | `StringType` | ja | Naam van de reseller |
-| `priceKey` | `StringType` | ja | UUID. Unieke sleutel van het daadwerkelijke product/tickettype dat is gekocht |
-| `languageCode` | `StringType` | ja | Code van de taal van de bestelling |
-| `ticketCode` | `StringType` | ja | Barcode van het ticket |
-| `capacityDate` | `TimestampType` | ja | Datum van het tijdslot, indien aanwezig |
-| `capacityNames` | `ArrayType(StringType)` | ja | Namen van de gebruikte capaciteiten/tijdsloten (indien aanwezig) |
-| `capacityStartTimeMinutesAfterMidnight` | `IntegerType` | ja | Starttijd van het tijdslot in minuten na middernacht, indien aanwezig |
-| `capacityEndTimeMinutesAfterMidnight` | `IntegerType` | ja | Eindtijd van het tijdslot in minuten na middernacht, indien aanwezig |
-| `capacityStartDate` | `StringType` | ja | Geformatteerde datum van het tijdslot, indien aanwezig |
-| `capacityStartTime` | `StringType` | ja | Geformatteerde starttijd van het tijdslot, indien aanwezig |
-| `capacityEndTime` | `StringType` | ja | Geformatteerde eindtijd van het tijdslot, indien aanwezig |
-| `posGroupTitle` | `StringType` | ja | Titel van de POS-groep |
-| `posTitle` | `StringType` | ja | Naam van de POS |
-| `posContact` | `StringType` | ja | Naam van de POS-medewerker |
-| `externalReservationNumber` | `StringType` | ja | Extern bestelnummer |
-| `externalID` | `StringType` | ja | Externe ID van het tickettype (prijstype) |
-| `extraInfo1` | `StringType` | ja | Extra info 1 van de bestelling |
-| `extraInfo2` | `StringType` | ja | Extra info 2 van de bestelling |
-| `extraInfo3` | `StringType` | ja | Extra info 3 van de bestelling |
-| `testPayment` | `BooleanType` | nee | Is gekocht met een testbetaling |
-| `confirmedDate` | `TimestampType` | ja | Datum van aankoop |
-| `vatNumber` | `StringType` | ja | Btw-nummer |
-| `vatLow` | `DoubleType` | nee | Bedrag laag btw-tarief |
-| `vatMiddle` | `DoubleType` | nee | Bedrag middelhoog btw-tarief |
-| `vatHigh` | `DoubleType` | nee | Bedrag hoog btw-tarief |
-| `amountExVatLow` | `DoubleType` | nee | Bedrag exclusief laag btw-tarief |
-| `amountExVatMiddle` | `DoubleType` | nee | Bedrag exclusief middelhoog btw-tarief |
-| `amountExVatHigh` | `DoubleType` | nee | Bedrag exclusief hoog btw-tarief |
-| `cashBooking` | `BooleanType` | nee | Geeft aan of dit een contante boeking betrof |
-| `priceTypeName` | `StringType` | ja | Naam van het prijstype (tickettype) |
-| `discountCode` | `StringType` | ja | Gebruikte kortingscode, indien van toepassing |
-| `discountName` | `StringType` | ja | **Nieuw sinds 2026-07-17.** Naam van de gebruikte korting, indien van toepassing. Contract: `Name of the discount which was used, if any` |
-| `creationDate` | `TimestampType` | nee | Aanmaakdatum van een reservering |
-| `modificationDate` | `TimestampType` | ja | Wijzigingsdatum van een reservering |
+### De bron laat lege velden wég — lees elke veldenlijst als ondergrens
 
-### Voorbeeld-JSON
+**In geen enkele gemeten respons kwam de waarde `null` voor.** Niet één keer, op duizenden
+records. De serializer laat een veld met de waarde `null` eenvoudigweg weg. Dat heeft twee gevolgen
+die allebei pijn doen als je ze niet weet:
 
-**UNKNOWN — niet vastgelegd.** Er zijn geen werkende v2-inloggegevens; op 2026-08-28 opnieuw bevestigd
-(`invalid_client`, zie *Openstaande vragen* in het hoofdrapport). De typen hierboven zijn afgeleid van het
-gepubliceerde OpenAPI 3.0.4-contract, opgehaald op 2026-08-28, niet van een waargenomen respons. Er zijn geen
-voorbeelddata verzonnen.
+1. **Records in dezelfde respons hebben verschillende sleutelsets.** Op `sold-tickets`: 2000
+   records leverden **15 verschillende sleutelsets** op, met 38 tot 45 velden per record.
+2. **Een veldenlijst uit een kleine steekproef is te kort.** Twee records gaven 43 namen; 2000
+   records gaven er 51. De acht die je met twee records mist zijn onder meer `discountCode` en
+   `discountName` — precies de velden waar deze migratie om begon.
 
----
+**Daarom staat bij elke lijst hieronder hoeveel records er zijn gezien, en is geen enkele lijst
+compleet.** De bovengrens is het contract; de werkelijke lijst komt uit Bronze, waar config-builder
+hem telt in plaats van schat.
 
-## Ticketcounter v2 — veldencatalogus `sold-subscriptions`
+| Entiteit | Waargenomen namen (N records, `excludeContactInfo: true`) | Contract (bovengrens) |
+|---|---|---|
+| `sold-tickets` | 51 (2000 records) | 72 |
+| `sold-subscriptions` | 24 (1425 records) | 47 |
+| `baskets` | 12 top-level (1588 records) | 16 |
+| `cancellations` | 10 (203 records) | 12 |
+| `scans` | 29 (2000 records) | 47 |
 
-Afgeleid van OpenAPI-schema `TC.Common.Models.Statistics.SoldSubscriptionsInfo` (record key `soldSubscriptions`).
-Onderdeel van [ticketcounter_research.md](../ticketcounter_research.md).
+### Datumopmaak — zoals de bron hem letterlijk teruggeeft
 
-### Inhoudsopgave
+Dit geldt voor alle vijf entiteiten en is de belangrijkste parseerbevinding.
 
-| Sectie | Omschrijving |
-|---------|-------------|
-| [Recordvelden](#recordvelden-2) | Typeoverzicht per veld voor één `sold-subscriptions`-record |
-| [Voorbeeld-JSON](#voorbeeld-json-2) | Status van een echte responsvoorbeeld |
+| Vorm | Voorbeeld | Waar |
+|---|---|---|
+| ISO 8601 **zonder tijdzone**, met fractie | `2026-08-01T00:00:23.3136009` | `saleDate`, `creationDate`, `modificationDate`, `cancelDate`, `confirmedDate`, `scanDate`, `basketConfirmed` |
+| ISO 8601 **zonder tijdzone**, zonder fractie | `2026-08-01T09:00:00` | `validFrom`, `validTo`, `capacityDate` |
+| **`dd-MM-yyyy`** | `01-08-2026` | `capacityStartDate` — een andere volgorde dan alle andere datumvelden |
+| **`HH:mm`** | `10:00` | `capacityStartTime`, `capacityEndTime` |
 
-### Recordvelden
+Drie dingen om op te letten:
 
-| API-veld | Spark-type | Nullable | Toelichting |
-|---|---|---|---|
-| `subscriptionKey` | `StringType` | nee | UUID. Unieke sleutel van het abonnement |
-| `type` | `StringType` | ja | Type van de aankoop |
-| `reservationKey` | `StringType` | ja | UUID. Unieke sleutel van de reservering. Er kunnen meerdere abonnementen in één reservering worden gekocht |
-| `subscriptionTemplateKey` | `StringType` | nee | UUID. Unieke sleutel van het sjabloon. |
-| `productName` | `StringType` | ja | Naam van het abonnementssjabloon |
-| `saleDate` | `TimestampType` | ja | Datum waarop het abonnement is gekocht |
-| `price` | `DoubleType` | nee | Verkoopprijs van het abonnement |
-| `originalPrice` | `DoubleType` | ja | Oorspronkelijke prijs van het abonnement |
-| `renewal` | `BooleanType` | nee | Indien true is dit abonnement een verlenging van een ander abonnement |
-| `channel` | `StringType` | ja | Waar dit abonnement is gekocht, online of aan de kassa |
-| `subscriptionHolderKey` | `StringType` | ja | UUID. Unieke sleutel van de abonnementhouder. Een houder kan meer dan één abonnement hebben |
-| `internalId` | `StringType` | ja | Interne id van het abonnementssjabloon. Dit veld kan worden ingevuld op de pagina van het abonnementssjabloon a |
-| `name` | `StringType` | ja | Naam van de abonnementhouder |
-| `email` | `StringType` | ja | E-mailadres van de abonnementhouder |
-| `street` | `StringType` | ja | Straat van de abonnementhouder |
-| `houseNumber` | `StringType` | ja | Huisnummer van de abonnementhouder |
-| `postalCode` | `StringType` | ja | Postcode van de abonnementhouder |
-| `cityName` | `StringType` | ja | Plaats van de abonnementhouder |
-| `countryCode` | `StringType` | ja | Landcode van de abonnementhouder |
-| `lat` | `DoubleType` | ja | Breedtegraadwaarde van het adres van de abonnementhouder |
-| `lon` | `DoubleType` | ja | Lengtegraadwaarde van het adres van de abonnementhouder |
-| `validFrom` | `TimestampType` | ja | Startdatum van de geldigheid van het abonnement |
-| `validTo` | `TimestampType` | ja | Einddatum van de geldigheid van het abonnement |
-| `companyName` | `StringType` | ja | Bedrijfsnaam van de abonnementhouder |
-| `firstName` | `StringType` | ja | Voornaam van de abonnementhouder |
-| `middle` | `StringType` | ja | Tussenvoegsel van de abonnementhouder |
-| `lastName` | `StringType` | ja | Achternaam van de abonnementhouder |
-| `phoneNumber` | `StringType` | ja | Telefoonnummer van de abonnementhouder |
-| `receiveNewsLetter` | `BooleanType` | ja | Geeft aan of de abonnementhouder de nieuwsbrief wil ontvangen |
-| `paymentMethod` | `StringType` | ja | Betaalmethode waarmee het abonnement is gekocht |
-| `nrOfSubscriptionProducts` | `IntegerType` | nee | Aantal abonnementskaarten |
-| `cancelDate` | `TimestampType` | ja | Annuleringsdatum, indien van toepassing |
-| `reservationNumber` | `StringType` | ja | Reserveringsnummer |
-| `language` | `StringType` | ja | Naam van de taal van de reservering |
-| `languageCode` | `StringType` | ja | Taalcode van de reservering |
-| `loyaltyLevel` | `IntegerType` | ja | Loyaliteitsniveau van de abonnementhouder |
-| `posGroupTitle` | `StringType` | ja | Titel van de POS-groep |
-| `posTitle` | `StringType` | ja | Titel van de POS |
-| `posContact` | `StringType` | ja | Naam van de POS-medewerker |
-| `externalId` | `StringType` | ja | Externe id van het abonnementssjabloon |
-| `testPayment` | `BooleanType` | nee | Geeft aan of het abonnement met een testbetaling is gekocht |
-| `gender` | `StringType` | ja | Geslacht van de abonnementhouder |
-| `birthDate` | `TimestampType` | ja | Geboortedatum van de abonnementhouder |
-| `discountCode` | `StringType` | ja | Gebruikte kortingscode, indien van toepassing |
-| `discountName` | `StringType` | ja | **Nieuw sinds 2026-07-17.** Naam van de gebruikte korting, indien van toepassing. Contract: `Name of the discount which was used, if any` |
-| `creationDate` | `TimestampType` | nee | Aanmaakdatum van een reservering |
-| `modificationDate` | `TimestampType` | ja | Wijzigingsdatum van een reservering |
+- **Er staat nooit een `Z` en nooit een offset achter.** In welke tijdzone deze stempels staan is
+  **UNKNOWN** — de spec zegt er niets over. De request-kant accepteert een `Z` wél
+  (`"2026-08-01T00:00:00Z"` werkt), maar accepteert hem net zo goed zonder.
+- **Het aantal fractiecijfers wisselt per record**, van 1 tot 7. Trailing nullen worden getrimd en
+  de fractie ontbreekt helemaal wanneer hij nul is. Een vast parseerformaat met `.%f` breekt
+  daarop — en Python's `%f` verwerkt bovendien maximaal 6 cijfers, terwijl 7 voorkomt. Dit is de
+  reden om de datumconversie in Silver expliciet te regelen in plaats van op een standaard-cast te
+  vertrouwen.
+- **`capacityStartDate` staat in dagen-eerst-volgorde** terwijl elk ander datumveld ISO is. Wie één
+  parseerregel op alle datumvelden loslaat, leest 1 augustus als 8 januari — of stil als `null`.
 
-### Voorbeeld-JSON
+### Persoonsgegevens: de schakelaar `excludeContactInfo`
 
-**UNKNOWN — niet vastgelegd.** Er zijn geen werkende v2-inloggegevens; op 2026-08-28 opnieuw bevestigd
-(`invalid_client`, zie *Openstaande vragen* in het hoofdrapport). De typen hierboven zijn afgeleid van het
-gepubliceerde OpenAPI 3.0.4-contract, opgehaald op 2026-08-28, niet van een waargenomen respons. Er zijn geen
-voorbeelddata verzonnen.
+Gemeten door dezelfde aanroep twee keer te doen, één keer met `true` en één keer met `false`, over
+hetzelfde venster en hetzelfde aantal records. Dit is een verschilmeting tussen twee gelijke
+metingen en daarmee betrouwbaarder dan de veldenlijsten hierboven — maar ook hier geldt dat een
+veld dat in beide standen leeg was, in geen van beide lijsten voorkomt.
 
----
+| Entiteit | Onderdrukt door `excludeContactInfo: true` |
+|---|---|
+| `sold-tickets` (2000 recs) | `contactHolderKey`, `email`, `firstName`, `lastName`, `name`, `postalCode`, `receiveNewsLetter` |
+| `sold-subscriptions` (1425 recs) | `birthDate`, `cityName`, `countryCode`, `email`, `firstName`, `gender`, `houseNumber`, `lastName`, `lat`, `lon`, `middle`, `name`, `phoneNumber`, `postalCode`, `receiveNewsLetter`, `street`, `subscriptionHolderKey` |
+| `baskets` (1588 recs) | het **hele geneste object `contact`** verdwijnt — met `contactKey`, `name`, `email`, `firstName`, `lastName`, `postalCode`, `street`, `houseNumber`, `cityName`, `countryCode`, `lat`, `lon`, `phoneNumber`, `birthDate`, `gender`, `receiveNewsLetter` |
+| `scans` (2000 recs) | `cityName`, `countryCode`, `email`, `firstName`, `houseNumber`, `lastName`, `lat`, `lon`, `middle`, `name`, `phoneNumber`, `postalCode`, `receiveNewsLetter`, `street` |
+| `cancellations` | **n.v.t.** — de parameter bestaat hier niet, en het record draagt geen persoonsgegevens |
 
-## Ticketcounter v2 — veldencatalogus `scans`
+> **De schakelaar dekt de klant, niet het personeel.** `posFirstName`, `posMiddleName`,
+> `posLastName`, `posName` (op `baskets`) en `posContact` / `posTitle` / `posGroupTitle` (op de
+> andere entiteiten) blijven in **beide** standen staan. Dat zijn namen van medewerkers achter het
+> verkooppunt: nog steeds persoonsgegevens, en er is aan de API-kant geen knop om ze te
+> onderdrukken. Wie ze niet wil landen, moet dat in de configuratie regelen.
 
-Afgeleid van OpenAPI-schema `TC.Common.Models.Statistics.ScanInfo` (record key `scans`).
-Onderdeel van [ticketcounter_research.md](../ticketcounter_research.md).
+Zet de schakelaar tijdens onderzoek **altijd aan**, ook wanneer de klant de gegevens straks wél wil
+laden. Wat de configuratie doet is een aparte beslissing; de verkenning heeft de waarden niet
+nodig.
 
-### Inhoudsopgave
+### sold-tickets
 
-| Sectie | Omschrijving |
-|---------|-------------|
-| [Recordvelden](#recordvelden-3) | Typeoverzicht per veld voor één `scans`-record |
-| [Voorbeeld-JSON](#voorbeeld-json-3) | Status van een echte responsvoorbeeld |
+- **Record key:** `soldTickets`
+- **Envelope keys:** `soldTickets`, `offset`, `resultCount`, `succeeded`, `isRedirect`, `displayError`
+- **Field names — waargenomen in 2000 records, NIET compleet** (`excludeContactInfo: true`):
+  `amountExVatHigh`, `amountExVatLow`, `amountExVatMiddle`, `cancelDate`, `capacityDate`,
+  `capacityEndTime`, `capacityEndTimeMinutesAfterMidnight`, `capacityNames`, `capacityStartDate`,
+  `capacityStartTime`, `capacityStartTimeMinutesAfterMidnight`, `cashBooking`, `channel`,
+  `confirmedDate`, `creationDate`, `discountCode`, `discountName`, `eventKey`, `eventName`,
+  `externalID`, `externalReservationNumber`, `extraInfo1`, `language`, `languageCode`,
+  `modificationDate`, `nrOfSeats`, `originalPrice`, `paymentMethod`, `performanceKey`,
+  `performanceSectionKey`, `performerName`, `posContact`, `posGroupTitle`, `posTitle`, `price`,
+  `priceKey`, `priceTypeName`, `productName`, `reservationKey`, `reservationNumber`, `saleDate`,
+  `salesChannel`, `testPayment`, `ticketCode`, `totalPrice`, `type`, `validFrom`, `validTo`,
+  `vatHigh`, `vatLow`, `vatMiddle`
+- **Let op de hoofdletters in `externalID`** — op elke andere entiteit heet het veld `externalId`.
+- **`capacityNames` is een array van strings**, geen scalar.
+- **Wijzigingsveld:** `modificationDate`; `creationDate` staat er los naast.
+- **Personal-data switch:** `excludeContactInfo` = aan; onderdrukt de zeven velden in de tabel
+  hierboven.
 
-### Recordvelden
+```json
+{
+  "soldTickets": [
+    {
+      "reservationKey": "REDACTED", "ticketCode": "REDACTED", "priceKey": "REDACTED",
+      "eventKey": "REDACTED", "performanceKey": "REDACTED", "performanceSectionKey": "REDACTED",
+      "productName": "REDACTED", "eventName": "REDACTED", "performerName": "REDACTED",
+      "type": "REDACTED", "channel": "REDACTED", "salesChannel": "REDACTED",
+      "language": "REDACTED", "languageCode": "REDACTED", "priceTypeName": "REDACTED",
+      "discountCode": "REDACTED", "discountName": "REDACTED",
+      "saleDate": "2026-08-01T00:00:21.1581685",
+      "confirmedDate": "2026-08-01T00:00:23.3136009",
+      "creationDate": "2026-08-01T00:00:21.1581685",
+      "modificationDate": "2026-08-01T00:00:23.3135978",
+      "validFrom": "2026-08-01T09:00:00", "validTo": "2026-08-01T19:00:00",
+      "capacityDate": "2026-08-01T00:00:00",
+      "capacityStartDate": "01-08-2026",
+      "capacityStartTime": "10:00", "capacityEndTime": "18:00",
+      "capacityNames": ["REDACTED"],
+      "totalPrice": "REDACTED", "price": "REDACTED", "originalPrice": "REDACTED",
+      "nrOfSeats": "REDACTED", "posContact": "REDACTED"
+    }
+  ],
+  "offset": "REDACTED", "resultCount": "REDACTED",
+  "succeeded": true, "isRedirect": false, "displayError": false
+}
+```
 
-| API-veld | Spark-type | Nullable | Toelichting |
-|---|---|---|---|
-| `scanId` | `IntegerType` | nee | Unieke id van de scan; bij handmatig inchecken is deze waarde 0 |
-| `ticketCode` | `StringType` | ja | Barcodewaarde van het ticket of de abonnementskaart |
-| `scanGroupName` | `StringType` | ja | De naam van de scangroep waar deze ticketcode is gescand |
-| `deviceId` | `StringType` | ja | De ID van het apparaat dat dit ticket heeft gescand |
-| `type` | `StringType` | ja | Type van de scan, bijv. Ticket of Subscription |
-| `reservationKey` | `StringType` | ja | UUID. Unieke sleutel van de reservering waartoe dit ticket behoort |
-| `subscriptionKey` | `StringType` | ja | UUID. Unieke sleutel van het abonnement |
-| `subscriptionProductKey` | `StringType` | ja | UUID. Unieke sleutel van het abonnementsproduct |
-| `scanDate` | `TimestampType` | nee | De datum waarop deze barcodewaarde is gescand |
-| `subscriptionTemplateKey` | `StringType` | ja | UUID. Unieke sleutel van het abonnementssjabloon |
-| `productName` | `StringType` | ja | Naam van het abonnementssjabloon |
-| `eventName` | `StringType` | ja | Naam van het evenement |
-| `performerName` | `StringType` | ja | Naam van de artiest |
-| `internalId` | `StringType` | ja | Interne id van het abonnementssjabloon. Dit veld kan worden ingevuld op de pagina van het abonnementssjabloon a |
-| `productInternalId` | `StringType` | ja | Interne id van het product. Dit veld bevat de informatie die op de productpagina is ingevuld voor interna |
-| `name` | `StringType` | ja | Naam van de abonnementhouder of ticketkoper |
-| `email` | `StringType` | ja | E-mailadres van de abonnementhouder of ticketkoper |
-| `street` | `StringType` | ja | Straat van de abonnementhouder of ticketkoper |
-| `houseNumber` | `StringType` | ja | Huisnummer van de abonnementhouder of ticketkoper |
-| `postalCode` | `StringType` | ja | Postcode van de abonnementhouder of ticketkoper |
-| `cityName` | `StringType` | ja | Plaats van de abonnementhouder of ticketkoper |
-| `countryCode` | `StringType` | ja | Landcode van de abonnementhouder of ticketkoper |
-| `lat` | `DoubleType` | ja | Breedtegraad van het adres van de abonnementhouder of ticketkoper |
-| `lon` | `DoubleType` | ja | Lengtegraad van het adres van de abonnementhouder of ticketkoper |
-| `eventKey` | `StringType` | ja | UUID. Unieke sleutel van een evenement |
-| `performanceKey` | `StringType` | ja | UUID. Unieke sleutel van een voorstelling |
-| `performanceSectionKey` | `StringType` | ja | UUID. Unieke sleutel van een sectie van een voorstelling |
-| `validFrom` | `TimestampType` | ja | Startdatum van de geldigheid van een ticket of abonnement |
-| `validTo` | `TimestampType` | ja | Einddatum van de geldigheid van een ticket of abonnement |
-| `companyName` | `StringType` | ja | Bedrijfsnaam |
-| `firstName` | `StringType` | ja | Voornaam van de koper |
-| `middle` | `StringType` | ja | Tussenvoegsel van de koper |
-| `lastName` | `StringType` | ja | Achternaam van de koper |
-| `phoneNumber` | `StringType` | ja | Telefoonnummer van de koper |
-| `reservationNumber` | `StringType` | ja | Nummer van de bestelling |
-| `priceKey` | `StringType` | ja | UUID. Unieke sleutel van het daadwerkelijke product/tickettype dat is gekocht |
-| `capacityNames` | `ArrayType(StringType)` | ja | Namen van de gebruikte capaciteiten/tijdsloten (indien aanwezig) |
-| `price` | `DoubleType` | ja | Prijs per plaats of per abonnement |
-| `originalPrice` | `DoubleType` | ja | Oorspronkelijke prijs per plaats of per abonnement |
-| `externalId` | `StringType` | ja | Externe ID van het tickettype of abonnementssjabloon |
-| `externalReservationNumber` | `StringType` | ja | Nummer van de bestelling in een extern systeem |
-| `extraInfo1` | `StringType` | ja | Extra info 1 van de bestelling |
-| `extraInfo2` | `StringType` | ja | Extra info 2 van de bestelling |
-| `extraInfo3` | `StringType` | ja | Extra info 3 van de bestelling |
-| `testPayment` | `BooleanType` | ja | Is gekocht met een testbetaling |
-| `receiveNewsLetter` | `BooleanType` | ja | Geeft aan of de abonnementhouder of ticketkoper de nieuwsbrief wil ontvangen |
-| `priceTypeName` | `StringType` | ja | Naam van het prijstype (type van het ticket). Alleen van toepassing op tickets. |
+> Waarden zijn geblankt; alleen de datum- en tijdwaarden staan er letterlijk, omdat ze de **vorm**
+> aantonen die hierboven wordt beschreven. Dit is geen volledige respons en geen volledig record.
 
-### Voorbeeld-JSON
+### sold-subscriptions
 
-**UNKNOWN — niet vastgelegd.** Er zijn geen werkende v2-inloggegevens; op 2026-08-28 opnieuw bevestigd
-(`invalid_client`, zie *Openstaande vragen* in het hoofdrapport). De typen hierboven zijn afgeleid van het
-gepubliceerde OpenAPI 3.0.4-contract, opgehaald op 2026-08-28, niet van een waargenomen respons. Er zijn geen
-voorbeelddata verzonnen.
+- **Record key:** `soldSubscriptions`
+- **Envelope keys:** `soldSubscriptions`, `offset`, `resultCount`, `succeeded`, `isRedirect`, `displayError`
+- **Field names — waargenomen in 1425 records, NIET compleet** (`excludeContactInfo: true`):
+  `cancelDate`, `channel`, `creationDate`, `externalId`, `language`, `languageCode`,
+  `modificationDate`, `nrOfSubscriptionProducts`, `originalPrice`, `posContact`, `posGroupTitle`,
+  `posTitle`, `price`, `productName`, `renewal`, `reservationKey`, `reservationNumber`, `saleDate`,
+  `subscriptionKey`, `subscriptionTemplateKey`, `testPayment`, `type`, `validFrom`, `validTo`
+- **Wijzigingsveld:** `modificationDate`
+- **Personal-data switch:** `excludeContactInfo` = aan; onderdrukt zeventien velden (zie tabel).
 
----
+```json
+{
+  "soldSubscriptions": [
+    {
+      "subscriptionKey": "REDACTED", "subscriptionTemplateKey": "REDACTED",
+      "reservationKey": "REDACTED", "reservationNumber": "REDACTED",
+      "productName": "REDACTED", "type": "REDACTED", "channel": "REDACTED",
+      "language": "REDACTED", "languageCode": "REDACTED", "externalId": "REDACTED",
+      "renewal": "REDACTED", "testPayment": "REDACTED",
+      "price": "REDACTED", "originalPrice": "REDACTED",
+      "nrOfSubscriptionProducts": "REDACTED",
+      "saleDate": "2026-01-02T21:00:01.5980614",
+      "creationDate": "2025-06-26T23:28:56.4830824",
+      "modificationDate": "2026-01-02T21:00:01.598056",
+      "validFrom": "2026-01-05T00:00:00", "validTo": "2026-01-07T23:59:59",
+      "posTitle": "REDACTED", "posGroupTitle": "REDACTED", "posContact": "REDACTED"
+    }
+  ],
+  "offset": "REDACTED", "resultCount": "REDACTED",
+  "succeeded": true, "isRedirect": false, "displayError": false
+}
+```
 
-## Ticketcounter v2 — veldencatalogus `cancellations`
+### baskets
 
-Afgeleid van OpenAPI-schema `TC.Common.Models.Statistics.CancellationsInfo` (record key `cancellations`).
-Onderdeel van [ticketcounter_research.md](../ticketcounter_research.md).
+- **Record key:** `baskets`
+- **Envelope keys:** `baskets`, `offset`, `resultCount`, `succeeded`, `isRedirect`, `displayError`
+- **Field names — waargenomen in 1588 records, NIET compleet** (`excludeContactInfo: true`):
+  `basketConfirmed`, `basketKey`, `basketNumber`, `cancellations`, `invitationCodes`,
+  `partialCancellation`, `posFirstName`, `posGroupName`, `posLastName`, `posMiddleName`, `posName`,
+  `reservations`
+- **Genest, en dat is het onderscheidende kenmerk van deze entiteit:**
+  - `reservations[]` → `reservationKey`, `reservationNumber`, `amount`
+  - `cancellations[]` → `reservationKey`, `reservationNumber`, `amount`
+  - `partialCancellation[]` → `ticketcode`, `reservationNumber`, `amount`
+  - `invitationCodes[]` → array van scalars
+  - `contact` → één object, verdwijnt volledig met de privacyschakelaar aan
+  - `payments` staat in het contract maar kwam in 1588 records niet voor (leeg = weggelaten)
+- **Let op: `partialCancellation[].ticketcode` is volledig kleingeschreven**, terwijl hetzelfde
+  begrip elders `ticketCode` heet. Dat is geen typefout in dit rapport maar in het contract.
+- **Wijzigingsveld: GEEN.** Er is `basketConfirmed` (een zakelijke datum) en verder niets. Zie de
+  asymmetrie-waarschuwing bij [Paginering en ingestie](#paginering-en-ingestie-per-entiteit).
+- **Personal-data switch:** `excludeContactInfo` = aan; verwijdert het hele object `contact`, maar
+  **niet** `posFirstName` / `posMiddleName` / `posLastName` / `posName`.
 
-### Inhoudsopgave
+```json
+{
+  "baskets": [
+    {
+      "basketKey": "REDACTED", "basketNumber": "REDACTED",
+      "basketConfirmed": "2026-01-01T05:48:25.3834131",
+      "posFirstName": "REDACTED", "posMiddleName": "REDACTED", "posLastName": "REDACTED",
+      "posName": "REDACTED", "posGroupName": "REDACTED",
+      "reservations": [{"reservationKey": "REDACTED", "reservationNumber": "REDACTED", "amount": "REDACTED"}],
+      "cancellations": [],
+      "partialCancellation": [],
+      "invitationCodes": []
+    }
+  ],
+  "offset": "REDACTED", "resultCount": "REDACTED",
+  "succeeded": true, "isRedirect": false, "displayError": false
+}
+```
 
-| Sectie | Omschrijving |
-|---------|-------------|
-| [Recordvelden](#recordvelden-4) | Typeoverzicht per veld voor één `cancellations`-record |
-| [Voorbeeld-JSON](#voorbeeld-json-4) | Status van een echte responsvoorbeeld |
+### cancellations
 
-### Recordvelden
+- **Record key:** `cancellations`
+- **Envelope keys:** `cancellations`, `offset`, `resultCount`, `succeeded`, `isRedirect`, `displayError`
+- **Field names — waargenomen in 203 records, NIET compleet** (geen privacyschakelaar beschikbaar):
+  `cancelDate`, `creationDate`, `modificationDate`, `nrOfSeats`, `originalPrice`, `price`,
+  `reservationKey`, `reservationNumber`, `validFrom`, `validTo` — plus `ticketCode` zodra
+  `includeTicketCodeValues: true` meegaat.
+- **Enige entiteit met één enkele sleutelset** in de gemeten records. Dat betekent niet dat de
+  lijst compleet is: `externalReservationNumber` staat in het contract en kwam niet voor.
+- **Wijzigingsveld:** `modificationDate`
+- **Personal-data switch:** n.v.t.
 
-| API-veld | Spark-type | Nullable | Toelichting |
-|---|---|---|---|
-| `reservationKey` | `StringType` | ja | UUID. Unieke sleutel van de reservering. |
-| `reservationNumber` | `StringType` | ja | Het reserveringsnummer. |
-| `externalReservationNumber` | `StringType` | ja | Extern nummer van de reservering |
-| `cancelDate` | `TimestampType` | ja | De datum van annulering |
-| `price` | `DoubleType` | nee | Verkoopprijs per plaats |
-| `originalPrice` | `DoubleType` | nee | Oorspronkelijke verkoopprijs per plaats |
-| `nrOfSeats` | `IntegerType` | nee | Aantal plaatsen op dit ticket |
-| `validFrom` | `TimestampType` | ja | Ticket geldig vanaf |
-| `validTo` | `TimestampType` | ja | Ticket geldig tot |
-| `ticketCode` | `StringType` | ja | De barcode van het ticket |
-| `creationDate` | `TimestampType` | nee | Aanmaakdatum van een reservering |
-| `modificationDate` | `TimestampType` | ja | Wijzigingsdatum van een reservering |
+```json
+{
+  "cancellations": [
+    {
+      "reservationKey": "REDACTED", "reservationNumber": "REDACTED",
+      "ticketCode": "REDACTED",
+      "cancelDate": "2026-01-01T12:58:59.290912",
+      "creationDate": "2025-12-31T13:23:54.5781908",
+      "modificationDate": "2026-01-01T12:58:59.290912",
+      "validFrom": "2026-01-02T09:30:00", "validTo": "2026-01-02T19:00:00",
+      "price": "REDACTED", "originalPrice": "REDACTED", "nrOfSeats": "REDACTED"
+    }
+  ],
+  "offset": "REDACTED", "resultCount": "REDACTED",
+  "succeeded": true, "isRedirect": false, "displayError": false
+}
+```
 
-### Voorbeeld-JSON
+### scans
 
-**UNKNOWN — niet vastgelegd.** Er zijn geen werkende v2-inloggegevens; op 2026-08-28 opnieuw bevestigd
-(`invalid_client`, zie *Openstaande vragen* in het hoofdrapport). De typen hierboven zijn afgeleid van het
-gepubliceerde OpenAPI 3.0.4-contract, opgehaald op 2026-08-28, niet van een waargenomen respons. Er zijn geen
-voorbeelddata verzonnen.
+- **Record key:** `scans`
+- **Envelope keys:** `scans`, `offset`, `resultCount`, `succeeded`, `isRedirect`, `displayError`
+- **Field names — waargenomen in 2000 records, NIET compleet** (`excludeContactInfo: true`):
+  `capacityNames`, `deviceId`, `eventKey`, `eventName`, `externalId`, `externalReservationNumber`,
+  `extraInfo1`, `originalPrice`, `performanceKey`, `performanceSectionKey`, `performerName`,
+  `price`, `priceKey`, `priceTypeName`, `productInternalId`, `productName`, `reservationKey`,
+  `reservationNumber`, `scanDate`, `scanGroupName`, `scanId`, `subscriptionKey`,
+  `subscriptionProductKey`, `subscriptionTemplateKey`, `testPayment`, `ticketCode`, `type`,
+  `validFrom`, `validTo`
+- **Wijzigingsveld: GEEN.** `scanDate` is het enige tijdstempel, en het is een zakelijke datum. Het
+  contract kent hier geen `creationDate` en geen `modificationDate`.
+- **Personal-data switch:** `excludeContactInfo` = aan; onderdrukt veertien velden (zie tabel).
 
----
+```json
+{
+  "scans": [
+    {
+      "scanId": "REDACTED", "ticketCode": "REDACTED", "scanGroupName": "REDACTED",
+      "deviceId": "REDACTED", "type": "REDACTED",
+      "reservationKey": "REDACTED", "reservationNumber": "REDACTED",
+      "subscriptionKey": "REDACTED", "subscriptionProductKey": "REDACTED",
+      "subscriptionTemplateKey": "REDACTED",
+      "eventKey": "REDACTED", "eventName": "REDACTED", "performanceKey": "REDACTED",
+      "performanceSectionKey": "REDACTED", "performerName": "REDACTED",
+      "productName": "REDACTED", "productInternalId": "REDACTED", "priceKey": "REDACTED",
+      "priceTypeName": "REDACTED", "capacityNames": ["REDACTED"],
+      "scanDate": "2026-08-01T10:00:01.320151",
+      "validFrom": "2026-07-31T00:00:00", "validTo": "2026-08-03T23:59:59",
+      "price": "REDACTED", "originalPrice": "REDACTED",
+      "externalId": "REDACTED", "externalReservationNumber": "REDACTED",
+      "extraInfo1": "REDACTED", "testPayment": "REDACTED"
+    }
+  ],
+  "offset": "REDACTED", "resultCount": "REDACTED",
+  "succeeded": true, "isRedirect": false, "displayError": false
+}
+```
 
-## Ticketcounter — impact van de migratie v1 naar v2
+## Delta v1 → v2 voor de verbinding
 
-Delta tussen de **v1**-connector die vandaag in productie draait en de **v2**-API. Bijgewerkt op
-2026-08-28 met live metingen op v1 en een verse ophaling van het v2-contract. Voor `sold-tickets`
-staat de uitgewerkte versie in
-[Delta v1 en v2 voor sold-tickets](#delta-v1-en-v2-voor-sold-tickets); dit hoofdstuk is het
-overzicht over alle vijf entiteiten.
+Wat er breekt aan **transport, authenticatie en paginering** — dus binnen de scope van dit rapport.
+De veld- en typedelta is verplaatst naar config-builder, die hem op de gelande data maakt; zie het
+kader bovenaan.
 
-### Wijzigingsmatrix
+| # | Onderwerp | v1 (gemeten 28-08-2026) | v2 (gemeten 04-09-2026) | Label |
+|---|---|---|---|---|
+| 1 | **Transport** | `GET` met query-string | **`POST` met JSON-body** | **BREAKING** |
+| 2 | **Recordsleutel + omhulsel** | PascalCase (`SoldTicketsInfo`, `ResultCount`) | camelCase (`soldTickets`, `resultCount`), plus `errorCode` in het contract | **BREAKING** |
+| 3 | **Paginering** | `offset`/`limit` als query-parameters; `ResultCount` = rijen op deze pagina | `offset`/`limit` **in de body**; `resultCount` = rijen op deze pagina (**gemeten, gelijk aan v1**); `limit` max 100 000, standaard 1000 | **BREAKING** (alleen het transport) |
+| 4 | **Datumfilters** | `fromDate`/`toDate` als query-parameters, formaat `%Y-%m-%d` | `fromDate`/`toDate` in de body als `date-time`; erbij: `modifiedFrom`/`modifiedTo` en `dateRangeType` | **BREAKING** |
+| 5 | **Authenticatie** | `api.ticketcounter.net/token`, grant `refresh_token`, geen scope, drie secrets | `apiv2.ticketcounter.{net\|eu}/connect/token`, grant **`api_key`**, scope `TC.Tickets.API`, **één** secret plus een letterlijke client-id | **BREAKING** |
+| 6 | **Veldnamen** | PascalCase | camelCase | **BREAKING** — raakt `03_schema.py` / `04_transforms.py`, en dat is werk voor config-builder |
+| 7 | **Wijzigingsveld** | bestaat niet | `modificationDate` op vier van de vijf | **Verbetering** — maakt echte CDC mogelijk |
+| 8 | **Rate limits** | 120 s per endpoint, afgedwongen met HTTP 409 | Niets gedocumenteerd, niets waargenomen | **NIET-BREAKING** |
 
-| Gebied | v1 (vandaag in productie) | v2 | Impact |
-|---|---|---|---|
-| Auth-grant | `refresh_token` | `client_credentials` | Alleen configuratie; het framework ondersteunt beide |
-| Token-endpoint | `https://api.ticketcounter.net/token` | `https://apiv2{test}.ticketcounter.eu/connect/token` | Alleen configuratie |
-| Scope | geen | `TC.Tickets.API` | **Niet configureerbaar — geen kolom, generator emitteert het niet** |
-| Inloggegevens | werkend (gemeten 2026-08-28) | **geweigerd, `invalid_client` (gemeten 2026-08-28)** | **Blokkade — nieuwe secrets nodig, per omgeving** |
-| HTTP-werkwoord | `GET` plus query-string | `POST` plus JSON-body | **Blokkade — de body-opbouw voor REST bestaat niet** |
-| UrlPath | `api/v1/statistics/...` | `api/v2/Statistics/...` | Alleen configuratie; let op de hoofdletter `S` en op `sold-tickets` met koppelteken |
-| Hoofdlettergebruik velden | PascalCase | camelCase | **`03_schema.py` en `04_transforms.py` herschrijven** |
-| Recordsleutel | `SoldTicketsInfo`, `Baskets`, `TicketScanInfo`, `SoldSubscriptionsInfo`, `Cancellations` | `soldTickets`, `baskets`, `scans`, `soldSubscriptions`, `cancellations` | Alleen configuratie, maar op alle vijf anders |
-| Omhulsel | `Offset`, `ResultCount`, `Succeeded`, `ErrorMessage`, `IsRedirect`, `RedirectUrl`, `DisplayError` | idem in camelCase, plus `errorCode` | `ResultCountKey` aanpassen; `errorCode` is additief |
-| Rate limit | **120 s per endpoint, HTTP 409** (gemeten) | niets gedocumenteerd | Kans op een fors kortere doorlooptijd; onbevestigd |
-| Strategie | `chunk_offset` | `chunk_offset` | Ongewijzigd |
-| Paginering | `offset` / `limit` in de query-string | `offset` / `limit` in de body, `limit` maximaal 100 000 | Transport wijzigt, model niet |
-| Watermerkfilter | `fromDate` / `toDate`, `%Y-%m-%d` | `fromDate` / `toDate` als `date-time`, plus `modifiedFrom` / `modifiedTo` en `dateRangeType` | Echte change-data capture wordt mogelijk |
+Het *model* van de ingestie verandert niet: `chunk_offset` met een datumvenster en
+offset-paginering per chunk blijft staan, inclusief `PageSize`, `ChunkSize` en `BatchSize`. Wat
+verandert is waar de parameters landen (body in plaats van query-string) en hoe het token wordt
+gehaald.
 
-### Velddelta per entiteit
+## Uitfasering van v1
 
-v1 live gemeten op 2026-08-28, v2 uit het contract van dezelfde dag. "Gedeeld" telt de velden die
-in beide bestaan, ongeacht hoofdlettergebruik.
+**Onbekend — de leverancier moet worden bevraagd.** Dit is wat er is gezocht en wat het opleverde:
 
-| Entiteit | v1 velden | v2 velden | Gedeeld | Alleen in v1 | Alleen in v2 |
-|---|---|---|---|---|---|
-| `sold_tickets` | 65 | 72 | 63 | `BuyingPrice`, `CountryName` | `capacityNames`, `countryCode`, `creationDate`, `discountCode`, `discountName`, `eventName`, `modificationDate`, `performerName`, `priceTypeName` |
-| `sold_subscriptions` | 42 | 47 | 41 | `CountryName` | `countryCode`, `creationDate`, `discountCode`, `discountName`, `modificationDate`, `originalPrice` |
-| `ticket_scans` | 44 | 47 | 42 | `BuyingPrice`, `CountryName` | `capacityNames`, `countryCode`, `eventName`, `performerName`, `priceTypeName` |
-| `baskets` | 15 | 16 | 15 | — | `invitationCodes` |
-| `cancellations` | 9 | 12 | 9 | — | `creationDate`, `modificationDate`, `ticketCode` |
+| Waar gezocht | Uitkomst |
+|---|---|
+| v2-spec, alle 148 paden en 353 schemadefinities | Geen enkel `Statistics`-pad of `Statistics`-schema is `deprecated`. De `deprecated`-vlaggen die er staan, zitten op ongerelateerde velden |
+| v2-spec op `sunset`, `deprecat`, `obsolete`, `legacy` | Geen sunset-datum. `legacy` gaat over kortingscode- en uitnodigingscodeversies in het product, niet over de API |
+| `api.ticketcounter.net`: swagger, `/help`, hostwortel | HTTP 404, HTTP 404, redirect naar de marketingsite. Geen publiek contract en geen changelog |
+| Publieke ontwikkelaarsportalen (`docs.`, `developer.`, `support.`, `helpdesk.`) | Bestaan niet; DNS lost niet op |
+| Websearch op uitfaseringsbeleid en release notes | Niets van deze leverancier gevonden |
 
-**Op geen enkele entiteit heeft ook maar een veld dezelfde spelling in beide generaties.** De
-hoofdletterwissel raakt dus letterlijk elke veldverwijzing in schema en transformaties, op alle
-vijf entiteiten.
+Zolang die datum ontbreekt is er **geen deadline** en dus geen dwang om te migreren. Dat maakt het
+een verbeteringsbesluit in plaats van een continuïteitsbesluit. Zodra de leverancier wel een datum
+noemt, kantelt dat.
 
-Twee velden verdwijnen structureel: `BuyingPrice` (inkoopprijs, op `sold_tickets` en
-`ticket_scans`) en `CountryName` (op alle drie de entiteiten die adresgegevens dragen; v2 levert
-alleen `countryCode`). Voor beide is een besluit nodig: vervangen, afleiden, of laten vervallen.
+## Gemengd draaien: één entiteit op v2, de rest op v1
 
-Verder verandert `basket.contact` van een enkel veld naar een geneste struct met 18 velden, en
-krijgen vier van de vijf entiteiten een `modificationDate` die er nu niet is.
+**Nee, niet binnen één bronconfiguratie.** De reden is de tokenflow, en die is gedeeld.
 
-### Vervolgacties
+Het configuratieschema legt verbinding en authenticatie vast op **bronniveau**:
+`source_connection_configs` draagt `base_url`, `auth_method`, `auth_grant_type`,
+`auth_token_endpoint`, `auth_scope`, de secret-templates, `key_vault_url` en `rate_limit_delay`.
+`source_entity_ingestion_configs` heeft **geen enkele** auth- of base-url-kolom: alleen `url_path`,
+`strategy`, de watermerkvelden, de recordsleutel en `strategy_details`. Eén entiteit op een ander
+grant-type zetten kan dus niet — er is maar één plek waar dat staat.
 
-Het `refresh-token`-secret kan pas na een aantoonbaar stabiele v2-periode worden uitgefaseerd — tot
-dat moment is het het terugvalpad. Het configuratiesjabloon dat deze bron als canoniek voorbeeld
-van het refresh-token-patroon noemt, moet worden bijgewerkt zodra v2 live is.
+**Nuance:** de API-client kent wel een per-entiteit override van de base-URL
+(`Details.EntityBaseUrl`), maar geen kolom vult hem, en een andere host is nog geen ander token.
 
----
+**Wat wel kan, met open ogen:** een **tweede bron-slug** met een eigen
+`source_connection_configs`-rij die op v2 wijst, met daarin alleen de entiteit die vooruit mag. De
+prijs: een tweede Bronze-landingsmap, een tweede watermerkreeks voor dezelfde entiteit, een eigen
+paar `03_schema.py` / `04_transforms.py`, en de plicht om de entiteit uit de oude configuratie te
+halen — anders schrijven twee configuraties naar dezelfde Silver-tabel.
+
+Sinds alle drie de blokkades weg zijn, levert die tweedeling **geen tijdwinst** meer op. Ze is
+alleen nog zinvol als je het risico van de eerste v2-productierun tot één entiteit wilt beperken.
+
+## Migratieplan
+
+1. **Stel de hostfamilie vast** (`.net` of `.eu`) door één tokenaanvraag te doen. Doe dit eerst;
+   elke andere meting is zinloos op de verkeerde host.
+2. **Laat de klant de v2-API-sleutel invoeren** via het portalformulier, per omgeving, onder de
+   naam `ticketcounter-{environment}-v2-api-key`. Nooit via een agent, nooit via een chat. De
+   bestaande v1-secrets blijven staan; die zijn het terugvalpad.
+3. **Laat config-builder de v2-configuratie bouwen.** Wijzigt ten opzichte van vandaag: `base_url`,
+   `auth_grant_type` (`api_key`), `auth_token_endpoint` (met `/connect/`), `auth_scope`,
+   `auth_api_key_template`, `auth_client_id` (`apikeygrant`), de vervallen
+   id/secret/refresh-templates, `url_path` per entiteit, `output_record_key` per entiteit,
+   `ResultCountKey`, het nieuwe `Method`/`Body`-blok, de watermerkparameters en `rate_limit_delay`.
+   Ongewijzigd: `strategy`, `PageSize`, `ChunkSize`, `batch_size`.
+4. **Laat config-builder de secties 3 tot en met 5 uit Bronze bepalen** — veldtypen, hernoemingen,
+   sleutel en historie. Dat gebeurt op de gelande data, niet op een API-steekproef, en dat is
+   precies waarom dit rapport ze niet meer bevat.
+5. **Draai in DEV en vergelijk op rijaantal en op som per dag** tegen de laatste v1-run over
+   hetzelfde venster. Verschil in rijaantal wijst op `dateRangeType`; verschil in bedragen op een
+   veldmapping.
+6. **Verlaag `rate_limit_delay` stapsgewijs** van 125 naar iets in de orde van 0,5 en meet per stap
+   of er 409 of 429 terugkomt. Ga niet in één keer.
+7. **Promoveer naar PRD** volgens de normale promotiepoort, met de v1-configuratie nog intact.
+8. **Faseer de v1-secrets uit** en werk het configuratiesjabloon bij dat deze bron als canoniek
+   voorbeeld van het refresh-token-patroon noemt. Pas na een aantoonbaar stabiele periode op v2.
+
+### Terugvalpad
+
+- **Tot stap 7** verandert er niets aan de draaiende v1-connector. Stoppen kost het werk, niet de
+  productie.
+- **Na stap 7, bij een probleem in PRD:** zet de bronconfiguratie terug op de v1-waarden en herstel
+  het vorige paar `03_schema.py` / `04_transforms.py`. Een configuratieterugrol plus twee bestanden,
+  geen datamigratie.
+- **Wat het terugvalpad open houdt:** de v1-secrets **niet** verwijderen tot stap 8. Zonder het
+  `refresh-token`-secret is v1 onbereikbaar en is er geen weg terug.
+
+## Benodigde uitbreidingen aan general-notebooks
+
+**Geen.** Dat is een wijziging ten opzichte van de vorige versie, die vier hiaten opsomde. Alle
+vier zijn inmiddels dicht. Nagelopen op 04-09-2026 in de broncode, niet in de documentatie:
+
+| Was gemeld als hiaat | Stand nu |
+|---|---|
+| REST-`POST` met JSON-filterbody | `StrategyDetails.Method="POST"` + `Body: {Template, ParamsIn}`. `_rest_request()` merget paginering, `ExtraParams` en het datumvenster in het JSON-document (`ParamsIn: "body"`, de standaard) |
+| `Method='POST'` toestaan zonder GraphQL-blok | De validator eist `GraphQL` **of** `Body`, nooit beide en nooit geen van beide — een POST zonder een van tweeën zou als GET vertrekken en een 200 op ongefilterde data opleveren, en wordt daarom geweigerd |
+| Paginering en watermerk in de body binden | Dezelfde `params`-dict voedt beide bestemmingen; `Body.ParamsIn` bepaalt alleen waar hij landt. Waarden houden hun type, dus `PageSize: 10000` komt als getal in de body |
+| Configureerbare OAuth2-`Scope` | Kolom `auth_scope` → `AuthDetails.OAuth2.Scope` |
+| *(nieuw sinds de vorige versie)* de grant `api_key` | `ApiKeyGrantAuth` + `get_api_key_grant_token()`; `create_auth_from_config()` routeert `oauth2` → `GrantType: api_key`. Configuratiekolommen `auth_api_key_template` en `auth_client_id` |
+
+Verder al ondersteund en dus niet te bouwen: `offset`- en `chunk_offset`-paginering
+(`OffsetParam`, `PageSizeParam`, `PageSize`, `ResultCountKey` met stopconditie
+`resultCount < PageSize`), datum-chunking via `LoopChunks.ChunkType: days`, markerberekening uit
+chunk-vensters, en herhaalpogingen bij `401`, `409`, `429` en `5xx` inclusief respect voor
+`Retry-After`.
+
+**Eén aandachtspunt zonder user story:** `_build_date_params()` formatteert de datumgrenzen met één
+`Format`-string. Voor de request-kant is dat genoeg (`%Y-%m-%dT%H:%M:%S` werkt). Voor het **lezen**
+van de teruggegeven stempels geldt dat niet, want de fractie varieert van 1 tot 7 cijfers — zie
+[Datumopmaak](#datumopmaak--zoals-de-bron-hem-letterlijk-teruggeeft). Dat raakt de
+Silver-transformatie, niet de ingestie, en hoort dus bij config-builder.
+
+## Openstaande vragen / UNKNOWNs
+
+1. **Tijdzone van de teruggegeven tijdstempels — UNKNOWN.** Geen `Z`, geen offset, niets in de
+   spec. Bepaalt of een `to_utc_timestamp` nodig is en met welke bronzone. Vraag aan de
+   leverancier.
+2. **Waarop filteren `fromDate`/`toDate` in v1? — UNKNOWN.** v2 kent `dateRangeType` met
+   `ConfirmationDate` als standaard. Filtert v1 op een andere datum, dan levert hetzelfde venster
+   op v2 een andere rijenset zonder dat er iets faalt. Vast te stellen door rijaantallen over
+   hetzelfde venster te vergelijken, of navragen.
+3. **`scans` in de ene omgeving leeg — UNKNOWN.** Vier vensters over twee jaar gaven
+   `succeeded: true` met een lege array, terwijl dezelfde aanroep in de andere omgeving direct een
+   volle pagina gaf. Data-, rechten- of configuratiekwestie aan de kant van de leverancier:
+   onbekend.
+4. **Rate limits op v2 — UNKNOWN, maar nu wel afgetast.** Niets gedocumenteerd en in circa veertig
+   aanroepen niets waargenomen. "Niet waargenomen" is geen "bestaat niet".
+5. **Uitfaseringsdatum van v1 — UNKNOWN.** Niet in de spec, geen publieke documentatie, geen
+   changelog. Alleen de leverancier weet dit.
+6. **Bevat `apiv2test` bruikbare data voor validatie? — UNKNOWN, ongeverifieerd sinds 2026-07-17.**
+7. **Kortingsreferentiedata — vastgesteld ontoegankelijk, geen UNKNOWN.** Alle drie de
+   `Discount`-endpoints geven HTTP 403 voor een Statistics-sleutel. Zie
+   [Toegang per rol](#toegang-per-rol--buiten-statistics-is-het-403).
+8. **`payments` op `baskets` — vorm ongeverifieerd.** Het staat in het contract maar kwam in 1588
+   records niet voor; met `null`-weglating betekent dat "niet gevuld in deze steekproef", niet
+   "bestaat niet". De geneste vorm ervan is dus niet waargenomen.
+9. **Verplaatst naar config-builder, uit Bronze te tellen (04-09-2026):** vulgraden per veld,
+   rijvolumes per entiteit, kardinaliteit, uniciteit van de kandidaat-sleutels, de diepte van de
+   beschikbare historie, en de volledige veldenlijst per entiteit. De vorige versie van dit rapport
+   voerde die als UNKNOWN op; ze zijn nu niet onbekend maar **elders belegd**.
+
+## Vragen aan de leverancier
+
+1. **Tijdzone.** In welke tijdzone staan de tijdstempels in de `Statistics`-responses? Ze dragen
+   geen offset en geen `Z`.
+2. **`dateRangeType` versus v1.** Op welke datum filteren `fromDate`/`toDate` op de
+   v1-`Statistics`-endpoints? Komt dat overeen met `dateRangeType = 0 (ConfirmationDate)`, of met
+   `CreationDate` of `VisitDate`?
+3. **Uitfasering.** Is er een einddatum voor de `Statistics`-endpoints op `api.ticketcounter.net`?
+   Let op dat dit een andere API is dan de spec die de Swagger-UI op de v2-host als "V1"
+   publiceert. Waar wordt een uitfasering aangekondigd — changelog, statuspagina, mailinglijst?
+4. **Rate limits op v2.** De v1-endpoints geven HTTP 409 met "You may only perform this action
+   every 120 seconds." Geldt op v2 een vergelijkbare limiet? Zo ja, welke, en per wat — per
+   endpoint, per client of per tenant?
+5. **`scans` zonder rijen.** Eén omgeving geeft over elk beproefd venster een lege array terwijl de
+   andere direct rijen levert. Is dat een rechtenkwestie, een configuratiekwestie of ontbreekt de
+   data?
+6. **Twee vervallen velden.** `BuyingPrice` en `CountryName` zitten wel in de v1-response en niet in
+   `SoldTicketsInfo` op v2. Is daar een vervanger voor, of vervallen ze bewust?
+7. **Testomgeving.** Bevat `apiv2test.ticketcounter.eu` representatieve data, zodat de migratie daar
+   te valideren is voordat er op productie wordt geschakeld?
 
 ## Verzamel-endpoints v2 — dimensie- en referentiebronnen
 
-> **Ongeverifieerd sinds 2026-07-17.** Dit hoofdstuk is niet opnieuw gecontroleerd tijdens de
-> change-check van 2026-08-28: het valt buiten de vijf entiteiten die in productie draaien, en
-> live aftasten is geblokkeerd door de inloggegevens. De bevindingen blijven staan omdat ze nog
-> steeds de beste beschikbare kennis zijn, niet omdat ze opnieuw zijn bevestigd.
+> **Ongeverifieerd sinds 2026-07-17, met één correctie op 04-09-2026.** Dit hoofdstuk beschrijft de
+> 21 v2-endpoints die een verzameling teruggeven buiten de vijf `Statistics`-feiten. Het is dit keer
+> alleen nagelopen op **bestaan** — de per-veld typetabellen die de vorige versie hier droeg zijn
+> verwijderd, want dat zijn sectie-3-gegevens en die komen uit Bronze. Wat blijft is de inventaris:
+> welk endpoint er is, wat de recordsleutel is, en of het incrementeel kan.
 
-Dit hoofdstuk verfijnt de rij *Alle overige tags* uit het [Entiteitenoverzicht](#entiteitenoverzicht).
-Het documenteert de **21 v2-endpoints die een verzameling (array) teruggeven** buiten de vijf
-`Statistics`-feiten die hierboven al volledig zijn beschreven. Doel: bepalen welke ervan bruikbaar zijn als
-**dimensie- of referentiebron** naast de bestaande feiten, welke puur **operationeel** zijn, en welke
-**persoonsgegevens** bevatten.
+- **Scope.** De vijf `Statistics`-feiten blijven de enige bevestigde ingestie-scope. Deel A is een
+  lijst **voorstellen**, niet bevestigd.
+- **Bewijsbasis:** het gepubliceerde OpenAPI-contract, opgehaald 04-09-2026. Er zijn hiervan **geen
+  responses opgehaald** — de enige drie die live zijn geprobeerd (`Discount/*`) gaven 403.
 
-- **Scope-afbakening.** De vijf `Statistics`-feiten blijven de enige *bevestigde* ingestie-scope. De negen
-  kandidaten in Deel A zijn **voorstellen** ter aanvulling (dimensies), nog niet bevestigd.
-- **Bewijsbasis.** Volledig afgeleid uit het gepubliceerde OpenAPI 3.0.4-contract (148 paden, 352 schema's).
-  Er is **geen live call** uitgevoerd. Elk type hieronder is een door het contract gedeclareerd type, geen
-  waargenomen type.
-- **Blokkade op inloggegevens.** De bestaande v2-sleutels geven `invalid_client` op test *en* prod
-  (ze werken alleen op v1). Daarom is de **Voorbeeld-JSON UNKNOWN voor alle 21 endpoints** — er is niets
-  verzonnen.
-- **Auth.** Identiek aan de feiten: het globale bearer-token met scope `TC.Tickets.API`. Geen van deze
-  endpoints declareert een eigen `security`-override. Er zijn dus geen nieuwe inloggegevens nodig bovenop de
-  (nog geblokkeerde) v2-clientinloggegevens.
+**Correctie 04-09-2026:** `GET /api/v2/DiscountReasons` bestaat niet meer. Het pad is nu
+`GET /api/v2/Discount/reasons`, en het geeft HTTP 403. De overige twintig paden uit de vorige versie
+bestaan alle nog, ongewijzigd.
 
-### Inhoudsopgave verzamel-endpoints
+### Vijf eigenschappen die voor alle 21 gelden
 
-| Deel | Endpoint | Record key | Aansluiting / reden |
-|---|---|---|---|
-| A. Kandidaat | [subscriptionTemplates](#subscriptiontemplates--get-apiv2subscriptiontemplates) | `subscriptionTemplates` | `subscriptionTemplateKey` → `sold_subscriptions` + `ticket_scans` (sterkste; enige met watermerk) |
-| A. Kandidaat | [performances](#performances--get-apiv2eventsperformances) | `performances` | `eventKey` / `performanceKey` → `sold_tickets` + `ticket_scans` |
-| A. Kandidaat | [prices](#prices--get-apiv2productspricetypeproducts) | `prices` | `priceKey` → `sold_tickets` + `ticket_scans` |
-| A. Kandidaat | [paymentTypes](#paymenttypes--get-apiv2paymentspayment-types) | `paymentTypes` | Referentie; labelkoppeling op betaalmethode |
-| A. Kandidaat | [predefinedReasons](#predefinedreasons--get-apiv2predefinedreasons) | `predefinedReasons` | Referentie (annulerings-/kortingsredenen); geen directe FK |
-| A. Kandidaat | [discountReasons](#discountreasons--get-apiv2discountreasons) | `discountReasons` | Referentie (kortingsredenen); geen directe FK |
-| A. Kandidaat | [ticketBundles](#ticketbundles--get-apiv2ticketbundles) | `ticketBundles` | Dunne samenvatting; geen FK in de feiten |
-| A. Kandidaat | [statuses](#statuses--get-apiv2reservationspossible-statuses) | `statuses` | Statische enum-decode; geen statusveld in de feiten |
-| A. Kandidaat | [soldCapacities](#soldcapacities--get-apiv2capacitiessold) | `soldCapacities` | Aggregaat per `priceKey`+datum; geen lijst-modus |
-| B. Operationeel | [permissions](#permissions--get-apiv2pospermissions) | `permissions` | Autorisatie op tokenclaims |
-| B. Operationeel | [printers](#printers--get-apiv2pospos-printers) | `printers` | POS-hardware |
-| B. Operationeel | [templates](#templates--get-apiv2pospos-templates) | `templates` | POS-lay-outsjablonen |
-| B. Operationeel | [printTemplates](#printtemplates--get-apiv2posprint-templates) | `printTemplates` | Printopmaak/-markup |
-| B. Operationeel | [priceKeys](#pricekeys--get-apiv2posticket-prolongation-pricekeys) | `priceKeys` | POS-verlengingslookup |
-| B. Operationeel | [commandScanDevices](#commandscandevices--get-apiv2scannerscommandscandevices) | `commandScanDevices` | Live scannerstatus |
-| B. Operationeel | [reservations](#reservations--get-apiv2reservationspos-calendar) | `reservations` | POS-kalender + persoonsgegevens |
-| B. Operationeel | [values](#values--get-apiv2webhooksretrieve-data) | `values` | Inkomende webhook-handler |
-| C. Persoonsgegevens | [contacts](#contacts--get-apiv2contactsfind-finddebtor-findexternal-findnamebirthdate) | `contacts` | Zoekacties + pure PII — geen ingestiebron |
-
-### Gedeelde responsvorm, paginering en watermerk
-
-Vijf bevindingen gelden voor **alle 21** endpoints en bepalen samen de ingestiestrategie:
-
-1. **Zelfde envelope, maar zonder pagineringsvelden.** Elke respons heeft dezelfde omhulsel-velden als de
-   feiten — `succeeded`, `errorMessage`, `isRedirect`, `redirectUrl`, `displayError`, `errorCode` — plus de
-   record-array(s). **Maar** anders dan de vijf `Statistics`-feiten bevat geen enkele envelope de velden
-   `offset` of `resultCount`. De offset-lus van het framework (die stopt zodra `resultCount < PageSize`) heeft
-   hier dus niets om op af te gaan.
-2. **Geen offset/limit-paginering.** 19 van de 21 endpoints hebben **geen** `offset`/`limit`-parameter: het
-   zijn **single-call full loads**. Alleen `Contacts/findexternal` en `Contacts/findnamebirthdate` accepteren
-   `offset`/`limit` — en zelfs die missen `offset`/`resultCount` in de envelope, dus daar zou je moeten
-   pagineren tot een lege array terugkomt. Voor de dimensiekandidaten is dit geen probleem: het zijn kleine
-   referentietabellen die in één call passen.
-3. **HTTP GET, geen POST-body.** Alle endpoints zijn `GET` met query-parameters. Ze raken dus **niet** de
-   POST-met-JSON-body-blokkade die de vijf feiten wél treft (zie
-   [Benodigde uitbreidingen aan general-notebooks](#benodigde-uitbreidingen-aan-general-notebooks)); de huidige
-   GET+query-string-client kan ze ongewijzigd aanroepen. Let op: het pad `/api/v2/TicketBundles` host daarnaast
-   een `POST` (aanmaken van een bundel) — gebruik uitdrukkelijk de `GET`-variant.
+1. **Zelfde omhulsel, maar zonder pagineringsvelden.** `succeeded`, `errorMessage`, `isRedirect`,
+   `redirectUrl`, `displayError`, `errorCode` plus de record-array — **maar geen `offset` en geen
+   `resultCount`**. De offset-lus van het framework heeft hier dus niets om op af te gaan.
+2. **Geen offset/limit-paginering.** 19 van de 21 hebben geen `offset`/`limit`: het zijn
+   single-call full loads. Alleen `Contacts/findexternal` en `Contacts/findnamebirthdate`
+   accepteren ze, en zelfs die missen `offset`/`resultCount` in het omhulsel.
+3. **HTTP `GET` met query-parameters, geen POST-body.** Ze raken de POST-body-vorm dus niet. Let op:
+   `/api/v2/TicketBundles` host daarnaast een `POST` (aanmaken) — gebruik uitdrukkelijk de `GET`.
 4. **Watermerk vrijwel afwezig.** Slechts één kandidaat draagt een echt wijzigingsveld
-   (`subscriptionTemplates.lastUpdatedOn`). `soldCapacities` draagt alleen zakelijke tijdslot-datums, geen
-   wijzigingsstempel. Alle overige endpoints hebben **geen enkel** datum-/wijzigingsveld → **alleen full load**.
-   Bovendien biedt **geen** van deze endpoints een server-side `modified`-filterparameter, dus zelfs
-   `subscriptionTemplates` moet volledig worden opgehaald (een max-kolom-watermerk kan hooguit client-side uit
-   `lastUpdatedOn` worden afgeleid).
-5. **Mediatypes & responscodes.** Elk endpoint declareert `text/plain`, `application/json` en `text/json` voor
-   de 200-respons (dezelfde `text/plain`-eigenaardigheid als bij de feiten) en **alleen** een `200` — er is
-   geen `429` of andere foutcode in het contract gedeclareerd.
+   (`subscriptionTemplates.lastUpdatedOn`), en **geen** van de 21 biedt een server-side
+   `modified`-filter. Dus: full load, altijd.
+5. **Mediatypes en responscodes.** Elk endpoint declareert `text/plain`, `application/json` en
+   `text/json` voor de 200, en **alleen** een `200` — geen `429` of andere foutcode in het contract.
 
-### Deel A — Ingestie-kandidaten (dimensies)
+### Deel A — ingestiekandidaten (dimensies)
 
-Negen endpoints die (mogelijk) aansluiten op sleutels in de bestaande feiten. Per endpoint: het contract, waar
-het op aansluit, en of het incrementeel kan.
-
-#### subscriptionTemplates — GET /api/v2/SubscriptionTemplates
-
-1. **Contract:** `GET /api/v2/SubscriptionTemplates` · tag `SubscriptionTemplates` · *"Obtains list of available subscription templates"*.
-2. **Request:** optioneel `languageCode` (`string`, standaard `en-US`). **Geen** `offset`/`limit`, geen filter op wijziging. Single-call full load.
-3. **Response:** record key `subscriptionTemplates`, items van schema `TC.Tickets.Models.Subscription.SubscriptionTemplateDetails` (24 velden, plus twee geneste sub-schema's).
-4. **Watermerk:** `lastUpdatedOn` (`TimestampType`) staat op recordniveau → een client-side max-watermerk is mogelijk. Het endpoint biedt echter **geen** server-side filter, dus de ophaal blijft full load. `validFrom`/`validTo`/`startDate`/`endDate` zijn geldigheidsvensters, geen wijzigingsstempel.
-5. **Aansluiting:** `subscriptionTemplateKey` → `sold_subscriptions.subscriptionTemplateKey` én `ticket_scans.subscriptionTemplateKey`. Sterkste koppeling van alle kandidaten (twee feiten) en rijkste payload. **Beste dimensiekandidaat.**
-6. **Sample JSON:** `UNKNOWN — v2-inloggegevens ontbreken (invalid_client op test en prod)`.
-
-| API-veld | Spark-type | Nullable | Toelichting |
+| Endpoint | Record key | Aansluiting op de feiten | Incrementeel? |
 |---|---|---|---|
-| `subscriptionTemplateKey` | `StringType` | nee | UUID. Unieke sleutel van het abonnementssjabloon |
-| `partnerKey` | `StringType` | nee | UUID. Partner waartoe dit sjabloon behoort |
-| `name` | `StringType` | ja | Naam van het abonnement |
-| `originalPrice` | `DoubleType` | ja | Oorspronkelijke prijs (voor het tonen van korting) |
-| `price` | `DoubleType` | nee | Prijs per abonnement |
-| `validFrom` | `TimestampType` | nee | Startdatum verkoopperiode |
-| `validTo` | `TimestampType` | nee | Einddatum verkoopperiode |
-| `startDate` | `TimestampType` | nee | Ingangsdatum geldigheid na aankoop |
-| `endDate` | `TimestampType` | ja | Einddatum geldigheid na aankoop |
-| `subscriptionType` | `IntegerType` | nee | Enum: `0`=`Period`, `1`=`Duration` |
-| `durationType` | `IntegerType` | nee | Enum: `0`=`Year`, `1`=`Month`, `2`=`Week`, `3`=`Day` |
-| `duration` | `IntegerType` | ja | Duur bij het gekozen `durationType` |
-| `lastUpdatedOn` | `TimestampType` | ja | Datum waarop het sjabloon is bijgewerkt (**watermerk-kandidaat**) |
-| `maximumQuantity` | `IntegerType` | nee | Max. aantal abonnementen per bestelling |
-| `subscriptionTemplateProducts` | `ArrayType(StructType)` (sub-schema `SubscriptionTemplateProductDetails`) | ja | Producten van dit sjabloon |
-| `tooltip` | `StringType` | ja | Tooltip voor de gebruiker |
-| `cardTemplate` | `StringType` | ja | Sjabloon voor de abonnementskaart |
-| `renewal` | `BooleanType` | nee | `true` = alleen voor verlenging bruikbaar |
-| `externalId` | `StringType` | ja | Externe id |
-| `scanningDisplayMessageTemplate` | `StringType` | ja | Sjabloon voor het scanbericht |
-| `internalId` | `StringType` | ja | Interne id |
-| `onlineNew` | `BooleanType` | nee | Bruikbaar online voor nieuwe aankoop |
-| `onlineRenew` | `BooleanType` | nee | Bruikbaar online voor verlenging |
-| `archived` | `BooleanType` | nee | Gearchiveerd |
+| `GET /api/v2/SubscriptionTemplates` | `subscriptionTemplates` | `subscriptionTemplateKey` → `sold_subscriptions` + `ticket_scans` | Alleen client-side, via `lastUpdatedOn` |
+| `GET /api/v2/Events/performances` | `performances` | `eventKey` / `performanceKey` → `sold_tickets` + `ticket_scans` | Nee |
+| `GET /api/v2/Products/pricetypeproducts` | `prices` | `priceKey` → `sold_tickets` + `ticket_scans` | Nee |
+| `GET /api/v2/Payments/payment-types` | `paymentTypes` | Labelkoppeling op betaalmethode | Nee |
+| `GET /api/v2/PredefinedReasons` | `predefinedReasons` | Referentie (annulerings-/kortingsredenen); geen directe FK | Nee |
+| `GET /api/v2/Discount/reasons` | *(403 — niet waargenomen)* | Kortingsredenen | **Niet toegankelijk** |
+| `GET /api/v2/TicketBundles` | `ticketBundles` | Dunne samenvatting; geen FK in de feiten | Nee |
+| `GET /api/v2/Reservations/possible-statuses` | `statuses` | Statische enum-decode; geen statusveld in de feiten | Nee |
+| `GET /api/v2/Capacities/sold` | `soldCapacities` | Aggregaat per `priceKey` + datum; geen lijst-modus | Nee |
 
-Sub-schema `TC.Tickets.Models.Subscription.SubscriptionTemplateProductDetails`:
+De sterkste kandidaat blijft `SubscriptionTemplates`: het koppelt aan twee feiten en is de enige met
+een wijzigingsstempel op recordniveau.
 
-| API-veld | Spark-type | Nullable | Toelichting |
-|---|---|---|---|
-| `subscriptionTemplateKey` | `StringType` | nee | UUID |
-| `productKey` | `StringType` | nee | UUID |
-| `minimumNumberOfProduct` | `IntegerType` | ja |  |
-| `maximumNumberOfProduct` | `IntegerType` | ja |  |
-| `product` | `StructType` (sub-schema `ProductDetails`) | nee |  |
-| `isInUse` | `BooleanType` | nee |  |
-| `sendCardWithConfirmationMail` | `BooleanType` | nee |  |
-| `lastUpdatedOn` | `TimestampType` | ja |  |
-| `isTicketStrips` | `BooleanType` | nee |  |
+### Deel B — operationeel, geen ingestiebron
 
-Sub-schema `TC.Tickets.Models.Subscription.ProductDetails`:
+`GET /api/v2/Pos/permissions` (`permissions`), `GET /api/v2/Pos/pos-printers` (`printers`),
+`GET /api/v2/Pos/pos-templates` (`templates`), `GET /api/v2/Pos/print-templates` (`printTemplates`),
+`GET /api/v2/Pos/ticket-prolongation-pricekeys` (`priceKeys`),
+`GET /api/v2/Scanners/commandscandevices` (`commandScanDevices`),
+`GET /api/v2/Reservations/pos-calendar` (`reservations`),
+`GET /api/v2/Webhooks/retrieve-data` (`values`).
 
-| API-veld | Spark-type | Nullable | Toelichting |
-|---|---|---|---|
-| `productKey` | `StringType` | nee | UUID |
-| `name` | `StringType` | ja |  |
-| `pluralName` | `StringType` | ja |  |
-| `description` | `StringType` | ja |  |
-| `externalId` | `StringType` | ja |  |
-| `areaCode` | `StringType` | ja |  |
-| `ticketCodeBatchId` | `IntegerType` | ja |  |
-| `minimumAge` | `IntegerType` | ja |  |
-| `maximumAge` | `IntegerType` | ja |  |
-| `internalId` | `StringType` | ja |  |
+Autorisatie, POS-hardware, lay-outsjablonen, live scannerstatus en een inkomende webhook-handler.
+Geen analytische waarde; `pos-calendar` bevat bovendien persoonsgegevens.
 
-#### performances — GET /api/v2/Events/performances
+### Deel C — persoonsgegevens, geen ingestiebron
 
-1. **Contract:** `GET /api/v2/Events/performances` · tag `Events` · *"Get the combination of event-performances for current sales channel"*.
-2. **Request:** optioneel `languageCode` (`string`, standaard `en-US`). **Geen** `offset`/`limit`, geen wijzigingsfilter. Single-call full load. Let op: *"for current sales channel"* — de lijst is gescoped op het verkoopkanaal van het token.
-3. **Response:** record key `performances`, items van schema `TC.Common.Models.Event.EventPerformanceInfo` (6 velden). **Naamgevingsvalstrik:** elk element van de array `performances` is een **evenement** (`EventPerformanceInfo`) dat op zijn beurt een geneste array `performances[]` met de eigenlijke voorstellingen bevat.
-4. **Watermerk:** **geen.** Geen wijzigingsveld; `startDateTime` is de voorstellingsdatum. Alleen full load.
-5. **Aansluiting:** `eventKey` → `sold_tickets.eventKey` én `ticket_scans.eventKey`; geneste `performanceKey` → `sold_tickets.performanceKey` én `ticket_scans.performanceKey`. Levert daarnaast `eventName`/`performanceName` als labels. Op één na sterkste kandidaat (twee sleutels, twee feiten).
-6. **Sample JSON:** `UNKNOWN — v2-inloggegevens ontbreken (invalid_client op test en prod)`.
-
-| API-veld | Spark-type | Nullable | Toelichting |
-|---|---|---|---|
-| `eventKey` | `StringType` | nee | UUID. Unieke sleutel van het evenement |
-| `eventName` | `StringType` | ja | Naam van het evenement |
-| `tagline` | `StringType` | ja | Slagzin |
-| `description` | `StringType` | ja | Beschrijving |
-| `partnerKey` | `StringType` | nee | UUID |
-| `performances` | `ArrayType(StructType)` (sub-schema `EventPerformanceDetailsInfo`) | ja | Voorstellingen binnen dit evenement |
-
-Sub-schema `TC.Common.Models.Event.EventPerformanceDetailsInfo`:
-
-| API-veld | Spark-type | Nullable | Toelichting |
-|---|---|---|---|
-| `performanceKey` | `StringType` | nee | UUID. Unieke sleutel van de voorstelling |
-| `startDateTime` | `TimestampType` | ja | Start van de voorstelling |
-| `performanceName` | `StringType` | ja | Naam van de voorstelling |
-| `performanceDescription` | `StringType` | ja | Beschrijving van de voorstelling |
-| `sortOrder` | `IntegerType` | nee | Sorteervolgorde |
-
-#### prices — GET /api/v2/Products/pricetypeproducts
-
-1. **Contract:** `GET /api/v2/Products/pricetypeproducts` · tag `Products` · *"Obtains price type products accessible by the current sales channel"*.
-2. **Request:** optioneel `capacityDate` (`date-time`), `languageId` (`int32`, standaard `0`, **obsolete** — gebruik `languageCode`), `languageCode` (`string`, standaard `en-US`). **Geen** `offset`/`limit`. Single-call full load, gescoped op het verkoopkanaal van het token.
-3. **Response:** record key `prices`, items van schema `TC.Tickets.Models.Product.PriceTypeProduct` (6 velden).
-4. **Watermerk:** **geen.** Alleen full load.
-5. **Aansluiting:** `priceKey` → `sold_tickets.priceKey` én `ticket_scans.priceKey`. Let op: er is **geen veld** `productName`; de weergavenaam van het product zit in `friendlyName`. De feiten dragen `productName`/`priceTypeName` als tekst — de koppeling gaat op `priceKey`.
-6. **Sample JSON:** `UNKNOWN — v2-inloggegevens ontbreken (invalid_client op test en prod)`.
-
-| API-veld | Spark-type | Nullable | Toelichting |
-|---|---|---|---|
-| `priceKey` | `StringType` | nee | UUID. Unieke sleutel van het prijstype/product |
-| `partnerKey` | `StringType` | nee | UUID |
-| `price` | `DoubleType` | nee | Prijs |
-| `friendlyName` | `StringType` | ja | Weergavenaam van het product |
-| `partnerName` | `StringType` | ja | Naam van de partner |
-| `notificationMessage` | `StringType` | ja | Meldingstekst |
-
-#### paymentTypes — GET /api/v2/Payments/payment-types
-
-1. **Contract:** `GET /api/v2/Payments/payment-types` · tag `Payments` · *"Obtains list of all supported payment types in the system"*.
-2. **Request:** **geen** parameters. Single-call full load. Dit is een **systeembrede** lijst (alle ondersteunde betaaltypes), niet tenant-specifiek.
-3. **Response:** record key `paymentTypes`, items van schema `TC.Common.Models.Payment.PaymentTypeInfo` (4 velden).
-4. **Watermerk:** **geen.** Alleen full load.
-5. **Aansluiting:** **referentietabel, geen schone FK.** De feiten dragen de betaling als tekst (`baskets.payments[].paymentType`, `sold_tickets.paymentMethod`, `sold_subscriptions.paymentMethod`), terwijl deze tabel `id` (`int`) + `title` + twee enums heeft. De koppeling gaat dus op naam/label, niet op sleutel — bruikbaar als decodetabel, niet als strikte dimensie.
-6. **Sample JSON:** `UNKNOWN — v2-inloggegevens ontbreken (invalid_client op test en prod)`.
-
-| API-veld | Spark-type | Nullable | Toelichting |
-|---|---|---|---|
-| `id` | `IntegerType` | nee | Interne id van het betaaltype |
-| `title` | `StringType` | ja | Weergavenaam |
-| `paymentProcessType` | `IntegerType` | nee | Enum (13): `0`=`None`, `1`=`Cash`, `2`=`PIN`, `3`=`Invoice`, `4`=`DepotApi`, `5`=`DepotReseller`, `6`=`Online`, `7`=`Recurring`, `8`=`PaperVoucher`, `9`=`Intersolve_Voucher`, `10`=`Intersolve_Giftcard`, `11`=`FashionCheque`, `12`=`CcvConnect` |
-| `paymentMethod` | `IntegerType` | nee | Grote enum (~103 leden): `0`=`iDeal`, `1`=`CreditCard`, `2`=`Internet`, `3`=`GiftCard`, … `24`=`Cash`, `25`=`Invoice`, … `100`=`ApplePay`, `101`=`GooglePay`, `-1`=`Unknown` |
-
-#### predefinedReasons — GET /api/v2/PredefinedReasons
-
-1. **Contract:** `GET /api/v2/PredefinedReasons` · tag `PredefinedReasons` · *"Gets predefined reasons"*.
-2. **Request:** optionele filters `isDiscountReason` (`bool`) en `isCancellationReason` (`bool`). **Geen** `offset`/`limit`. Single-call full load.
-3. **Response:** record key `predefinedReasons`, items van schema `TC.Common.Models.Discount.PredefinedReason` (5 velden).
-4. **Watermerk:** **geen.** Alleen full load.
-5. **Aansluiting:** referentie/lookup voor annulerings- en kortingsredenen. De huidige feiten dragen **geen** reden-sleutel (`cancellations` heeft geen reden-veld; `sold_tickets`/`sold_subscriptions` dragen `discountCode` als tekst, niet dit `id`). **Geen directe FK** in de bestaande entiteiten → losstaande referentietabel.
-6. **Sample JSON:** `UNKNOWN — v2-inloggegevens ontbreken (invalid_client op test en prod)`.
-
-| API-veld | Spark-type | Nullable | Toelichting |
-|---|---|---|---|
-| `id` | `IntegerType` | nee |  |
-| `reason` | `StringType` | ja | Reden (tekst) |
-| `isDiscountReason` | `BooleanType` | nee | Is een kortingsreden |
-| `isCancellationReason` | `BooleanType` | nee | Is een annuleringsreden |
-| `cancellationAmountPercentage` | `DoubleType` | ja | Percentage van het te annuleren bedrag |
-
-#### discountReasons — GET /api/v2/Discount/reasons
-
-1. **Contract:** `GET /api/v2/Discount/reasons` · tag `Discount` · *"Gets discount's reasons"*.
-2. **Request:** **geen** parameters. Single-call full load.
-3. **Response:** record key `discountReasons`, items van schema `TC.Common.Models.Discount.DiscountReason` (2 velden).
-4. **Watermerk:** **geen.** Alleen full load.
-5. **Aansluiting:** dunne referentie (id + reden); overlapt met `predefinedReasons` (met `isDiscountReason=true`). **Geen directe FK** in de feiten (`discountCode` is een code-tekst, niet dit `id`) → losstaande referentietabel.
-6. **Sample JSON:** `UNKNOWN — v2-inloggegevens ontbreken (invalid_client op test en prod)`.
-
-| API-veld | Spark-type | Nullable | Toelichting |
-|---|---|---|---|
-| `id` | `IntegerType` | nee |  |
-| `reason` | `StringType` | ja | Kortingsreden (tekst) |
-
-#### ticketBundles — GET /api/v2/TicketBundles
-
-1. **Contract:** `GET /api/v2/TicketBundles` · tag `TicketBundles` · *"Gets ticket bundles"*. **Let op:** hetzelfde pad host ook een `POST` (*"Adds new ticket bundle"*, schrijfactie) — gebruik uitdrukkelijk de `GET`.
-2. **Request:** optioneel `searchPhrase` (`string`) en `archived` (`bool`). **Geen** `offset`/`limit`. `searchPhrase` maakt dit deels zoek-georiënteerd, maar met `archived` is een volledige lijst op te vragen. Single-call full load.
-3. **Response:** record key `ticketBundles`, items van schema `TC.Common.Models.TicketBundle.TicketBundleSummary` (3 velden).
-4. **Watermerk:** **geen.** Alleen full load.
-5. **Aansluiting:** dunne samenvatting (barcode + aantal + gearchiveerd). `bundleBarcode` komt **niet** voor in de vijf feiten; de losse ticketcodes van een bundel zitten alleen achter een sub-endpoint (`/{bundleBarcode}/tickets`). Deze lijst alleen heeft dus **geen FK** naar de feiten — marginale dimensiewaarde.
-6. **Sample JSON:** `UNKNOWN — v2-inloggegevens ontbreken (invalid_client op test en prod)`.
-
-| API-veld | Spark-type | Nullable | Toelichting |
-|---|---|---|---|
-| `bundleBarcode` | `StringType` | ja | Barcode van de bundel |
-| `nrOfBarcodes` | `IntegerType` | nee | Aantal barcodes in de bundel |
-| `isArchived` | `BooleanType` | nee | Gearchiveerd |
-
-#### statuses — GET /api/v2/Reservations/possible-statuses
-
-1. **Contract:** `GET /api/v2/Reservations/possible-statuses` · tag `Reservations` · *"Retrieves list of all possible reservation statuses"*.
-2. **Request:** **geen** parameters. Single-call full load.
-3. **Response:** record key `statuses`, items van schema `TC.Common.Models.Reservation.ReservationStatusInfo` (2 velden).
-4. **Watermerk:** **geen** — statische enum-decode. Alleen full load (verandert vrijwel nooit).
-5. **Aansluiting:** statische **enum-decodetabel** (statuscode → naam), identiek voor alle klanten. De `Statistics`-feiten dragen momenteel geen reserveringsstatusveld, dus er is **geen directe FK**. Pure referentie; alleen nuttig als er later een statuskolom wordt ingelezen.
-6. **Sample JSON:** `UNKNOWN — v2-inloggegevens ontbreken (invalid_client op test en prod)`.
-
-| API-veld | Spark-type | Nullable | Toelichting |
-|---|---|---|---|
-| `statusValue` | `IntegerType` | nee | Enum (13): `0`=`Unknown`, `1`=`Unconfirmed`, `2`=`WaitingForPayment`, `3`=`PaymentRetry`, `4`=`PaymentUncertain`, `5`=`Canceled`, `6`=`Declined`, `7`=`Confirmed`, `8`=`WaitingForPSPAnswer`, `9`=`HandledByPartner`, `10`=`ConfirmedPrintTickets`, `11`=`Blocked`, `12`=`Abandoned` |
-| `statusName` | `StringType` | ja | Naam van de status |
-
-#### soldCapacities — GET /api/v2/Capacities/sold
-
-1. **Contract:** `GET /api/v2/Capacities/sold` · tag `Capacities` · *"Obtains list of capacities that have at least one reservation linked with the count of those linked reservations."*.
-2. **Request:** optioneel `priceKey` (`uuid`), `startDate` (`date-time`), `endDate` (`date-time`; leeg = één dag). **Geen** `offset`/`limit`. De parameters zijn in de spec optioneel, maar **semantisch nodig**: het endpoint geeft capaciteiten per `priceKey` + datumvenster. Er is **geen "alles"-modus**.
-3. **Response:** record key `soldCapacities`, items van schema `TC.Tickets.Models.Capacity.SoldCapacityDetails` (3 velden).
-4. **Watermerk:** **geen wijzigingsstempel.** `capacityStartTime`/`capacityEndTime` zijn de tijdslot-grenzen (zakelijke datums), geen change-tracking.
-5. **Aansluiting:** dit is een **aggregaat/afgeleide metriek** (aantal gekoppelde reserveringen per tijdslot voor één `priceKey`) — het gedraagt zich als een feit/metriek, niet als dimensie. Omdat het `priceKey` + datum vereist en geen lijst-modus heeft, kan het niet als platte dimensie worden ingelezen zonder te itereren over elke `priceKey` × datum. **Valt tussen wal en schip.**
-6. **Sample JSON:** `UNKNOWN — v2-inloggegevens ontbreken (invalid_client op test en prod)`.
-
-| API-veld | Spark-type | Nullable | Toelichting |
-|---|---|---|---|
-| `capacityStartTime` | `TimestampType` | nee | Starttijd van het tijdslot |
-| `capacityEndTime` | `TimestampType` | nee | Eindtijd van het tijdslot |
-| `reservationsCount` | `IntegerType` | nee | Aantal gekoppelde reserveringen |
-
-### Deel B — Operationeel / geen ingestiebron
-
-Acht endpoints die wél een verzameling teruggeven, maar **geen ingestiebron** zijn. Per endpoint staat expliciet
-waarom het afvalt.
-
-#### permissions — GET /api/v2/Pos/permissions
-
-1. **Contract:** `GET /api/v2/Pos/permissions` · tag `Pos` · *"Retrieves the list of permissions based on the claims"*.
-2. **Request:** **geen** parameters. Single-call.
-3. **Response:** record key `permissions` = `ArrayType(StringType)` — een platte lijst rechten-strings (geen itemschema).
-4. **Watermerk:** **geen.**
-5. **Waarom het afvalt:** autorisatiegegevens op basis van de **claims van het aanroepende token**, niet van de klant. Verandert per token/gebruiker; geen entiteit, geen sleutel, geen analytische waarde.
-6. **Sample JSON:** `UNKNOWN — v2-inloggegevens ontbreken (invalid_client op test en prod)`.
-
-#### printers — GET /api/v2/Pos/pos-printers
-
-1. **Contract:** `GET /api/v2/Pos/pos-printers` · tag `Pos` · *"Retrieve list of POS printers"*.
-2. **Request:** **geen** parameters. Single-call.
-3. **Response:** record key `printers`, items van schema `TC.Common.Models.Pos.PosPrinterInfo` (`id` `IntegerType`, `title` `StringType`, `archived` `BooleanType`).
-4. **Watermerk:** **geen.**
-5. **Waarom het afvalt:** POS-hardwareconfiguratie (printers aan de kassa). Operationele apparaatinventaris zonder analytische waarde en zonder FK naar de feiten.
-6. **Sample JSON:** `UNKNOWN — v2-inloggegevens ontbreken (invalid_client op test en prod)`.
-
-#### templates — GET /api/v2/Pos/pos-templates
-
-1. **Contract:** `GET /api/v2/Pos/pos-templates` · tag `Pos` · *"Retrieve templates"*.
-2. **Request:** **geen** parameters. Single-call.
-3. **Response:** record key `templates`, items van schema `TC.Common.Models.Pos.PosTemplateInfo` (`id`, `salesChannelId`, `title`, `languageId`, `languageCode`, `archived`).
-4. **Watermerk:** **geen.**
-5. **Waarom het afvalt:** POS-UI/lay-outsjablonen. Operationele configuratie zonder analytische waarde.
-6. **Sample JSON:** `UNKNOWN — v2-inloggegevens ontbreken (invalid_client op test en prod)`.
-
-#### printTemplates — GET /api/v2/Pos/print-templates
-
-1. **Contract:** `GET /api/v2/Pos/print-templates` · tag `Pos` · *"Retrieve a list of POS print templates"*.
-2. **Request:** optioneel `allowNonPosTemplates` (`bool`, standaard `false`). Single-call.
-3. **Response:** **twee** arrays — `printTemplates` (schema `TC.Common.Models.Pos.PosPrintTemplateInfo`: `id`, `isPosTemplate`, `title`, `posPrintTemplateType` enum `0`=`Receipt`/`1`=`Ticket`/`2`=`PinReceipt`/`3`=`Download`/`4`=`Subscription`/`5`=`CashCount`, `content`, `archived`) en `defaultPrintTemplateMappings` (schema `TC.Common.Models.Pos.DefaultPrintTemplateMappingInfo` is in de spec **leeg** — `{}`, geen gedefinieerde velden).
-4. **Watermerk:** **geen.**
-5. **Waarom het afvalt:** printopmaak/-markup (bonnen, tickets); `content` bevat sjabloon-markup. Operationele configuratie zonder analytische waarde.
-6. **Sample JSON:** `UNKNOWN — v2-inloggegevens ontbreken (invalid_client op test en prod)`.
-
-#### priceKeys — GET /api/v2/Pos/ticket-prolongation-pricekeys
-
-1. **Contract:** `GET /api/v2/Pos/ticket-prolongation-pricekeys` · tag `Pos` · *"Retrieve a list of price keys for ticket prolongation"*.
-2. **Request:** **geen** parameters. Single-call.
-3. **Response:** record key `priceKeys`, items van schema `TC.Tickets.Models.PriceKeys.PriceKeyProlongationInfo` (`priceKey` `StringType`, `prolongation` `StringType`).
-4. **Watermerk:** **geen.**
-5. **Waarom het afvalt:** POS-lookup voor ticketverlenging aan de kassa (welke prijssleutels bruikbaar zijn om te verlengen). `priceKey` overlapt met de dimensie `prices`, maar het doel is de POS-verlengingsflow — smalle operationele configuratie, geen dimensie.
-6. **Sample JSON:** `UNKNOWN — v2-inloggegevens ontbreken (invalid_client op test en prod)`.
-
-#### commandScanDevices — GET /api/v2/Scanners/commandscandevices
-
-1. **Contract:** `GET /api/v2/Scanners/commandscandevices` · tag `Scanners` · *"Obtains scan devices with enabled commands"*.
-2. **Request:** **geen** parameters. Single-call.
-3. **Response:** record key `commandScanDevices`, items van schema `TC.Common.DataAccess.Dto.Scanning.CommandScanDeviceDto` (`deviceId` `StringType`, `scannerName` `StringType`, `isConnected` `BooleanType`).
-4. **Watermerk:** **geen.**
-5. **Waarom het afvalt:** live status van scanners (verbonden/niet). Realtime apparaatstatus, geen historische bedrijfsdata.
-6. **Sample JSON:** `UNKNOWN — v2-inloggegevens ontbreken (invalid_client op test en prod)`.
-
-#### reservations — GET /api/v2/Reservations/pos-calendar
-
-1. **Contract:** `GET /api/v2/Reservations/pos-calendar` · tag `Reservations` · *"Obtains reservation information required for pos calendar"*.
-2. **Request:** optioneel `priceKey` (`uuid`), `startTime` (`date-time`), `endTime` (`date-time`). **Geen** `offset`/`limit`. Semantisch gescoped op `priceKey` + tijdslot; geen "alles"-modus.
-3. **Response:** record key `reservations`, items van schema `TC.Tickets.Models.Reservation.ReservationPosCalendarDetails` (`reservationKey`, `reservationNumber`, `firstName`, `lastName`, `middle`, `mailAddress`).
-4. **Watermerk:** **geen.**
-5. **Waarom het afvalt:** **dubbele reden.** (a) POS-kalenderweergave, alleen gescoped op `priceKey` + tijdslot (geen lijst-modus), én (b) het bevat **persoonsgegevens** (`firstName`, `lastName`, `mailAddress`) zónder `excludeContactInfo`-schakelaar. Operationele kassabalie-kalender, geen ingestiebron.
-6. **Sample JSON:** `UNKNOWN — v2-inloggegevens ontbreken (invalid_client op test en prod)`.
-
-#### values — GET /api/v2/Webhooks/retrieve-data
-
-1. **Contract:** `GET /api/v2/Webhooks/retrieve-data` · tag `Webhooks` · *"Handles webhook call from third parties to retrieve data (for example for number of scans)"*.
-2. **Request:** **geen** parameters. Single-call.
-3. **Response:** record key `values`, items van schema `TC.Tickets.Models.Webhooks.NameValues` (`name` `StringType`, `value` `StringType`).
-4. **Watermerk:** **geen.**
-5. **Waarom het afvalt:** dit is een **inkomende webhook-handler** (derden roepen dit aan om bijvoorbeeld scanaantallen op te halen), geen bladerbare dataset. Retourneert generieke naam/waarde-paren. Geen ingestiebron.
-6. **Sample JSON:** `UNKNOWN — v2-inloggegevens ontbreken (invalid_client op test en prod)`.
-
-### Deel C — Persoonsgegevens (zoekacties, geen ingestiebron)
-
-Vier `Contacts`-endpoints die alle **dezelfde** verzameling teruggeven (record key `contacts`, schema
-`TC.Common.Models.Contact.ContactDetails`). Ze worden hier gedocumenteerd, maar zijn **nadrukkelijk geen
-ingestiebron**.
-
-#### contacts — GET /api/v2/Contacts/find, /finddebtor, /findexternal, /findnamebirthdate
-
-1. **Contract:** tag `Contacts`. Vier endpoints, één responsschema:
-   - `GET /api/v2/Contacts/find` — *"Searches for a contact"*
-   - `GET /api/v2/Contacts/finddebtor` — *"Searches for a debtors on Vat and country combination"*
-   - `GET /api/v2/Contacts/findexternal` — *"Searches for a contact with an external Id"*
-   - `GET /api/v2/Contacts/findnamebirthdate` — *"Searches for a contact based on name and birthdate"*
-2. **Request:** alle parameters staan als optioneel gedeclareerd, maar het zijn **zoekacties** die criteria vereisen:
-   - `find`: `mailAddress`, `externalId`, `includeInactiveAccounts` (`bool`, standaard `true`)
-   - `finddebtor`: `vatNumber`, `countryId` (`int32`), `countryCode`
-   - `findexternal`: `keyWord`, `offset` (`int32`), `limit` (`int32`)
-   - `findnamebirthdate`: `firstName`, `middleName`, `lastName`, `birthDate` (`date-time`), `offset` (`int32`), `limit` (`int32`)
-   Alleen `findexternal` en `findnamebirthdate` bieden `offset`/`limit` — en dan nog binnen een zoekfilter, zonder `offset`/`resultCount` in de envelope.
-3. **Response:** record key `contacts`, items van schema `TC.Common.Models.Contact.ContactDetails` (29 velden, incl. het geneste `address`).
-4. **Watermerk:** **geen** (`birthDate` is PII, geen wijzigingsstempel). Een full load is sowieso onmogelijk (geen lijst-modus).
-5. **Waarom het geen ingestiebron is:**
-   - **Zoekacties, geen lijst.** Er is **geen "alle contacten"-modus**: je moet al weten wie je zoekt (mail, btw+land, keyword, of naam+geboortedatum).
-   - **Pure persoonsgegevens.** De hele payload is klant-PII (naam, geboortedatum, e-mail, telefoon, volledig adres, btw-nummer, opt-ins, `deceased`). Anders dan de feiten is er **geen** `excludeContactInfo`-schakelaar — het doel van het endpoint is juist de persoon teruggeven.
-   - **Opname zou klantgegevens in Bronze zetten** — tegen de guard rails (`contracts/agent-behavior.md`, `contracts/sensitive-data-handling/README.md`). De feiten dragen de contact-**sleutel** al (`contactHolderKey` / `subscriptionHolderKey` / `contact.contactKey`) voor koppelingen; de persoonsattributen horen niet integraal gekopieerd te worden.
-6. **Sample JSON:** `UNKNOWN — v2-inloggegevens ontbreken (invalid_client op test en prod)`. En zelfs mét inloggegevens zou een echte respons ruwe PII zijn die niet in de repo mag landen.
-
-| API-veld | Spark-type | Nullable | Toelichting |
-|---|---|---|---|
-| `contactKey` | `StringType` | ja | Sleutel van het contact voor verdere communicatie |
-| `companyName` | `StringType` | ja | Bedrijfsnaam |
-| `vatNumber` | `StringType` | ja | Btw-nummer |
-| `gender` | `StringType` | ja | Geslacht ('M'/'F') |
-| `firstName` | `StringType` | ja | Voornaam |
-| `middle` | `StringType` | ja | Tussenvoegsel |
-| `lastName` | `StringType` | ja | Achternaam |
-| `birthDate` | `TimestampType` | ja | Geboortedatum |
-| `phoneNumber` | `StringType` | ja | Telefoonnummer |
-| `mobileNumber` | `StringType` | ja | Mobiel nummer |
-| `mailAddress` | `StringType` | ja | E-mailadres |
-| `receiveNewsletter` | `BooleanType` | nee | Nieuwsbrief gewenst |
-| `receiveInvoice` | `BooleanType` | nee | Factuur gewenst |
-| `optin1` | `BooleanType` | nee | Opt-in voor eigen optie 1 |
-| `optin2` | `BooleanType` | nee | Opt-in voor eigen optie 2 |
-| `optin3` | `BooleanType` | nee | Opt-in voor eigen optie 3 |
-| `address` | `StructType` (sub-schema `AddressDetails`) | nee | Adres |
-| `fullName` | `StringType` | ja | Volledige naam |
-| `languageCode` | `StringType` | ja | Taalcode van het contact |
-| `receivePassbooks` | `BooleanType` | nee | Passbook-tickets gewenst |
-| `externalId` | `StringType` | ja | Externe id van het contact |
-| `contactInfo1` | `StringType` | ja | Extra contactinfo 1 |
-| `contactInfo2` | `StringType` | ja | Extra contactinfo 2 |
-| `contactInfo3` | `StringType` | ja | Extra contactinfo 3 |
-| `contactInfo4` | `StringType` | ja | Extra contactinfo 4 |
-| `deceased` | `BooleanType` | nee | Overleden |
-| `isDisabled` | `BooleanType` | nee | Uitgeschakeld |
-| `isAccountHolder` | `BooleanType` | nee | Is accounthouder |
-| `isActiveAccount` | `BooleanType` | nee | Is een actief account |
-
-Sub-schema `TC.Common.Models.Contact.AddressDetails`:
-
-| API-veld | Spark-type | Nullable | Toelichting |
-|---|---|---|---|
-| `street` | `StringType` | ja | Straat |
-| `number` | `StringType` | ja | Huisnummer |
-| `extraAddressLine` | `StringType` | ja | Extra adresregel |
-| `postalCode` | `StringType` | ja | Postcode |
-| `cityName` | `StringType` | ja | Plaats |
-| `stateName` | `StringType` | ja | Provincie/staat |
-| `lat` | `DoubleType` | ja | Breedtegraad |
-| `lon` | `DoubleType` | ja | Lengtegraad |
-| `countryCode` | `StringType` | ja | ISO-landcode |
+`GET /api/v2/Contacts/find`, `/finddebtor`, `/findexternal`, `/findnamebirthdate` — record key
+`contacts`. Dit zijn **zoekacties** op personen, geen exportbronnen: ze vragen om zoektermen en
+geven persoonsgegevens terug. Ze horen niet in een ingestiepijplijn.
