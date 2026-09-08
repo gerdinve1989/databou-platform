@@ -1,9 +1,18 @@
 # Tommy Booking Support — bronresearch (`tomm`)
 
-> **Stand van zaken 08-09-2026: er is nog geen enkel bericht aangeleverd.** Dit rapport legt
-> vast wat er vaststaat over de ontsluiting — het brontype, de route, het adrespatroon en de
+> **Stand van zaken 08-09-2026: de leverancier heeft nog geen enkel bericht aangeleverd.**
+> Bronze is intussen niet leeg — er staat materiaal in de ontvangstmap, maar dat hebben wij er
+> zelf neergezet om te kunnen testen. Zie *Wat er in Bronze staat*. Dit rapport legt vast wat er
+> vaststaat over de ontsluiting — het brontype, de route, het adrespatroon en de
 > toegangsvoorwaarden — en laat alles wat de inhoud betreft expliciet open. Er is bewust géén
-> schema opgesteld: dat kan pas op een echt bericht, nooit op een beschrijving.
+> schema opgesteld: dat kan pas op een echt bericht van de leverancier, nooit op een beschrijving
+> en ook niet op materiaal dat wijzelf hebben geplaatst.
+
+> **Twee namen in dit rapport zijn van ons en niet van de leverancier.** `tbs` als
+> vestigingsaanduiding en `booking` als naam van de berichtsoort zijn door ons gekozen. Tommy
+> Booking Support heeft geen van beide bevestigd — niet de namen, en niet dat er een berichtsoort
+> bestaat die hiermee overeenkomt. Ze staan overal in dit rapport gemarkeerd; lees ze nergens als
+> afspraak.
 
 ## TypeSource
 
@@ -37,6 +46,49 @@ aangewezen waar hij mag neerzetten.
 
 Wat er inhoudelijk in een bericht zit — velden, sleutel, granulariteit, of één bericht één
 boeking is of een set — is `UNKNOWN — needs confirmation`.
+
+## Wat er in Bronze staat — en waar het vandaan komt
+
+**Dit is de sectie die de rest van het rapport in perspectief zet.** Wie de ontvangstmap opent,
+ziet bestanden staan en zou daaruit kunnen afleiden dat de koppeling loopt. Dat is niet zo.
+
+| Meting | Waarde |
+|---|---|
+| Locatie | de ontvangstmap `{Bronze Files}/tomm/tbs/booking/incoming/` op de DEV-werkruimte |
+| Aantal bestanden | 231 |
+| Totale omvang | 987,1 KB |
+| Laatste bestand | 08-09-2026, 19:28 |
+| Gemeten met | `bronze_inspect.py --list-only`, op 08-09-2026 |
+
+**Niets daarvan komt van de leverancier.** De gebruiker heeft het materiaal zelf aangeleverd en
+het is met `bronze_stage.py --action land` in de ontvangstmap gezet — de handeling die het script
+beschrijft als "bestanden neerzetten zoals een leverancier dat zou doen, zodat er iets te testen
+valt vóórdat de koppeling leeft". Die actie werkt uitsluitend op DEV, precies om de reden die hier
+speelt: met de hand geland materiaal is later niet meer te onderscheiden van een echte levering.
+
+**Het zijn de originelen, niet geanonimiseerd.** Dat is een bewuste keuze van de gebruiker: Bronze
+hoort de echte levering te houden, en een geanonimiseerde variant in Bronze zou een levering tonen
+die zo nooit is binnengekomen. Het gevolg staat onder *Risico's* → *Persoonsgegevens*: het gaat om
+echte boekingsdata met echte persoonsgegevens, en iedereen die deze map inspecteert werkt met
+persoonsgegevens.
+
+**Wat deze bestanden wel en niet bewijzen:**
+
+| Wel | Niet |
+|---|---|
+| Dat het adrespatroon werkt: de map bestaat, er kan in geschreven worden, en de listing leest terug | Dat de leverancier daar kán schrijven — het schrijfrecht is nog niet toegekend en de identiteitsvorm is nog niet gekozen |
+| Dat er materiaal is om de verwerking naar Silver op te beproeven | Dat de vorm van dat materiaal de vorm is die de leverancier straks stuurt |
+| Dat de mapnaam `booking` technisch bruikbaar is | Dat `booking` een berichtsoort van de leverancier is, of dat hij die zo noemt |
+
+Formaat, sleutel, watermerk, volume en leveringspatroon blijven daarom `UNKNOWN — needs
+confirmation`. Ze zijn af te lezen aan het gelande materiaal, maar dat materiaal is van ons, en
+een eigenschap ervan is geen eigenschap van de bron.
+
+> **Over de betrouwbaarheid van deze meting.** `bronze_inspect.py` is op 08-09-2026 gerepareerd:
+> op een Bronze-lakehouse gaf de listing de héle lakehouse terug in plaats van de opgevraagde
+> bron, waardoor een inventarisatie van de ene bron de bestanden van de andere meetelde — met een
+> totaal dat er kloppend uitzag. Metingen met dat script van vóór die reparatie zijn op dit punt
+> onbruikbaar. De meting hierboven is erna gedaan.
 
 ## Leveringstype en route
 
@@ -91,22 +143,34 @@ wortel voor de scriptkant (`scripts/lib/bronze_target.py`).
 {Bronze Files}/tomm/tbs/{berichtsoort}/incoming/
 ```
 
-- `tomm` — de bron.
-- `tbs` — de vestigingsaanduiding. Eén vaste waarde: er wordt niet per park of locatie
-  gescheiden. Wie meerdere vestigingen heeft, herkent ze straks aan een veld in de data en niet
-  aan een map.
-- `{berichtsoort}` — **één map per soort bericht.** Dít is de scheiding die is gekozen.
-- `incoming` — van het framework.
+- `tomm` — de bron. Ligt vast.
+- `tbs` — de vestigingsaanduiding. **Door ons gekozen, niet bevestigd door de leverancier.** Eén
+  vaste waarde: er wordt niet per park of locatie gescheiden. Wie meerdere vestigingen heeft,
+  herkent ze straks aan een veld in de data en niet aan een map.
+- `{berichtsoort}` — **één map per soort bericht.** Dít is de scheiding die is gekozen. Het
+  patroon is van ons; welke soorten er zijn, is aan de leverancier.
+- `incoming` — van het framework. Ligt vast.
 
 **Welke berichtsoorten er zijn, is `UNKNOWN — needs confirmation`.** Het patroon staat vast, de
-lijst niet. Er is hier bewust geen voorbeeldsoort ingevuld: een verzonnen soort verschijnt als
-een concreet adres en is daarna niet meer te onderscheiden van een adres dat werkelijk is
-afgesproken — terwijl het de leverancier is die bepaalt welke soorten hij stuurt en of hij ze
-gescheiden aanlevert.
+lijst niet. Het is de leverancier die bepaalt welke soorten hij stuurt en of hij ze gescheiden
+aanlevert; vraag 4 hieronder stelt die vraag en is onbeantwoord.
 
-**Het gevolg van deze keuze, en het is er een om vooraf te weten:** er is niet één adres maar
-één adres per soort. Elke bevestigde soort levert een map op, en elke map is een adres dat de
-leverancier apart moet instellen.
+### `booking` is een werknaam van ons
+
+**Er bestaat inmiddels één map onder dit patroon, en die heet `booking`.** Die naam is door ons
+gekozen om het gelande testmateriaal ergens neer te kunnen zetten — zie *Wat er in Bronze staat*.
+Wat er niet achter zit:
+
+| Wat het níet is | Toelichting |
+|---|---|
+| Een door de leverancier bevestigde berichtsoort | Tommy heeft niet gezegd dat hij zoiets stuurt, en al helemaal niet dat hij het zo noemt |
+| Een adres dat aan de leverancier is doorgegeven | Er is nog niets doorgegeven; het schrijfrecht bestaat ook nog niet |
+| Een vertaling van een bekende leveranciersterm | Er is geen leveranciersterm om uit te vertalen — vraag 4 is onbeantwoord |
+
+**Waarom dit met zoveel nadruk staat.** Een mapnaam die eenmaal in een listing staat, leest na een
+paar weken als een afspraak: hij is concreet, hij bestaat, en er staan bestanden in. Het verschil
+tussen "wij hebben deze map gemaakt" en "hier levert de leverancier op" is dan niet meer aan de
+data af te lezen. Zolang vraag 4 openstaat, is `booking` een werknaam en niets meer.
 
 ### Hoe een soort aan zijn mapnaam komt
 
@@ -122,7 +186,7 @@ ronde langs de leverancier.
 
 Daarom blijft de vraag hoe de leverancier zijn soorten zélf noemt onverminderd nodig: niet meer
 om over te nemen, maar om te kunnen vertalen en om elk adres aan de juiste soort te kunnen
-koppelen.
+koppelen. `booking` is niet het resultaat van die vertaalslag — er was niets om uit te vertalen.
 
 ### Valkuilen bij de mapnaam van een soort
 
@@ -164,6 +228,21 @@ blijft beheerwerk waarvoor **geen script bestaat**; zie *Toegang en authenticati
 De volgorde is daarmee vastgelegd en niet omkeerbaar: eerst de map, dan het recht. Recht kan
 alleen worden toegekend op een map die al bestaat.
 
+### Testmateriaal neerzetten — een andere handeling dan een levering
+
+Naast `prepare` kent hetzelfde script `--action land`: dat zet bestanden uit een lokale map in
+`incoming/`, zoals een leverancier zou doen. Dat is de handeling waarmee het huidige materiaal in
+Bronze is beland. Drie eigenschappen die er in dit dossier toe doen:
+
+| Eigenschap | Waarom het hier telt |
+|---|---|
+| **Alleen DEV** | Productie hoort zijn data van de leverancier te krijgen; met de hand geland materiaal is daar later niet van te onderscheiden |
+| Alleen naar `incoming/`, nooit naar `processing/` | Het volgt dezelfde weg als een echte levering, dus de verwerking is er eerlijk mee te beproeven |
+| Weigert wanneer `incoming/` al gevuld is, tenzij `--yes` | Het framework leest alles wat er staat; twee keer landen levert elke record twee keer op |
+
+**Wat het script niet kan, en dit rapport dus wel moet doen:** vastleggen dat de bestanden er
+door ons zijn gezet. Aan het materiaal in Bronze is dat niet te zien.
+
 ### Levenscyclus van een bestand
 
 ```
@@ -184,8 +263,8 @@ framework; wie daarin schrijft, loopt tegen een lopende verwerking aan.
 |---|---|
 | `{Bronze Files}` | ligt vast — volgt uit het klantprofiel |
 | `{source}` | ligt vast — `tomm` |
-| `{environment}` | ligt vast — `tbs`, één vaste vestigingsaanduiding |
-| `{entity}` | patroon ligt vast (één map per berichtsoort, genormaliseerd genoemd), **de lijst soorten is `UNKNOWN — needs confirmation`** |
+| `{environment}` | **door ons gekozen: `tbs`**, één vaste vestigingsaanduiding. Niet bevestigd door de leverancier |
+| `{entity}` | patroon ligt vast (één map per berichtsoort, genormaliseerd genoemd). De enige bestaande map heet `booking` en is **een werknaam van ons**; **de lijst soorten is `UNKNOWN — needs confirmation`** |
 | `incoming` | ligt vast — framework |
 
 ## Toegang en authenticatie
@@ -223,6 +302,10 @@ meekomt zonder dat er iets buiten deze bron open gaat.
 > bestaat in dit platform **geen script en geen procedure** om zo'n rol in te richten: het is een
 > handmatige beheerhandeling, en dat blijft het tot iemand hem automatiseert. Het aanmaken van de
 > map is inmiddels wél geautomatiseerd — zie *De map aanmaken* — maar dat is de andere helft.
+
+**Er is vandaag geen schrijfrecht toegekend.** Dat de map bestaat en gevuld is, zegt daar niets
+over: wij hebben hem gevuld met onze eigen identiteit. Voor de leverancier is er nog geen
+identiteit, geen rol en geen adres dat is doorgegeven.
 
 ### De identiteitsvorm — een uitgestelde keuze
 
@@ -267,7 +350,9 @@ nooit in een gesprek.
 ## Formaat en codering
 
 `UNKNOWN — needs confirmation` op alle punten: formaat, codering, scheidingsteken, kopregel,
-bestandsnaamgeving.
+bestandsnaamgeving. Het gelande materiaal heeft natuurlijk een formaat, maar dat is het formaat
+dat wíj hebben neergezet — het zegt niets over wat de leverancier stuurt. Vraag 3 hieronder is
+onbeantwoord.
 
 **Eén randvoorwaarde is echter geen open vraag maar een gemeten feit, en hij beslist mee:**
 
@@ -286,20 +371,41 @@ geen luxe maar de voorwaarde om te beginnen.
 
 ## Kolomschema
 
-`UNKNOWN` — er is nog geen bericht aangeleverd.
+`UNKNOWN` — de leverancier heeft nog geen bericht aangeleverd.
 
 Er is bewust geen schema afgeleid uit productbeschrijvingen of publieke documentatie. Een schema
 dat als gemeten leest terwijl het geraden is, is schadelijker dan geen schema: de config-builder
 bouwt erop verder en een ontbrekende of verkeerd benoemde kolom faalt niet, die blijft leeg.
 
-Er komt één schema **per berichtsoort**: elke soort is een eigen entity met een eigen map, een
-eigen schema en een eigen Silver-tabel.
+**Er ligt wel materiaal om een schema uit te tellen, en het is niet van de leverancier.** De 231
+bestanden in `booking/incoming/` zijn te lezen en te tellen, en de config-builder doet dat ook —
+dat is zijn werk voor de secties 3 tot en met 5. Wat daaruit komt beschrijft dan de vorm van
+**ons testmateriaal**. Zolang de leverancier niets heeft geleverd, is dat een aanname over hem en
+geen meting van hem; komt zijn eerste echte bericht er anders uit te zien, dan zijn die secties
+mis en moeten ze opnieuw.
+
+### Eén map is niet hetzelfde als één Silver-tabel
+
+Het is verleidelijk om "één map per berichtsoort" te lezen als "één Silver-tabel per
+berichtsoort". Dat volgt er niet uit:
+
+> De verwerking leidt uit één Bronze-entity meerdere Silver-entities af. De Silver-lijst is
+> `[entity_to_process] + de rijen waarvan `ParentEntity` gelijk is aan die entity` — de ouder
+> eerst, daarna zijn kinderen. (`notebook_ProcessToSilver_Generic_Child.py`, regel 137-146;
+> `05_entity_process_config.template.md` → *Parent / expanded children*.)
+
+Een array in het bericht kan dus in sectie 4 worden uitgeklapt naar een eigen Silver-tabel, met
+sectie 5 die het kind aan zijn ouder koppelt. **Gevolg voor het adres:** het aantal mappen hoeft
+niet gelijk te zijn aan het aantal Silver-tabellen. Levert de leverancier alles in één stroom,
+dan is dat werkbaar — de scheiding wordt dan in sectie 4 en 5 gemaakt in plaats van in het pad.
+Dat neemt de scherpte van risico 2 hieronder weg, maar beantwoordt vraag 4 niet: welke soorten er
+zijn, blijft aan de leverancier.
 
 ## Sleutel en watermark
 
 `UNKNOWN` — beide vragen (welke velden een bericht uniek maken, en waaraan je ziet dat een
-boeking is gewijzigd) zijn pas op echte berichten te beantwoorden, en horen bovendien bij de
-telling die op Bronze wordt gedaan.
+boeking is gewijzigd) zijn pas op echte berichten van de leverancier te beantwoorden, en horen
+bovendien bij de telling die op Bronze wordt gedaan.
 
 Wat nu al vaststaat: de verwerking voegt zelf een `FileName`-kolom toe met het volledige pad van
 het bronbestand. Dat geeft altijd een terugvalvolgorde voor ontdubbeling, ook wanneer de bron
@@ -310,7 +416,9 @@ zelf geen wijzigingsmoment meestuurt.
 `UNKNOWN — needs confirmation`: frequentie, delta of volledige set, aantal bestanden per
 levering, bestandsgrootte, en of alle bestanden verwerkt moeten worden of alleen het laatste.
 
-Er is niets om op te schatten: er is nog geen levering geweest.
+**De 231 bestanden in Bronze zijn hier geen antwoord op.** Ze zijn in één handeling door ons
+neergezet; het tijdstempel van 19:28 is het moment waarop wíj landden, geen leveringsmoment. Er
+is nog geen levering geweest, dus er is nog niets om een patroon uit af te lezen.
 
 ## Aansluiting op de general-notebooks
 
@@ -318,33 +426,37 @@ Er is niets om op te schatten: er is nog geen levering geweest.
 |---|---|
 | `push` wordt herkend en de ingestie wordt overgeslagen | werkt |
 | Aanmaken van de ontvangstmap, met terugleescontrole | werkt — `bronze_stage.py --action prepare` |
+| Testmateriaal neerzetten in `incoming/`, alleen op DEV | werkt — `bronze_stage.py --action land` |
 | Verplaatsen van `incoming/` naar `processing/`, met telcontrole | werkt |
 | Archivering na verwerking, ook op een lakehouse | werkt |
+| Meerdere Silver-tabellen uit één Bronze-map | werkt — ouder-kindrelatie in sectie 5 |
 | Lezen van de aangeleverde bestanden | **alleen JSON** — zie *Formaat en codering* |
 | Toekennen van schrijfrecht aan een externe partij | **geen script** — handmatige beheerhandeling |
-| Afleiden van de omgevingskolom bij een lakehouse-Bronze | **gat** — zie hieronder |
+| Afleiden van de omgevingskolom bij een lakehouse-Bronze | **gerepareerd in de broncode; niet vastgesteld of die versie draait** — zie hieronder |
 
-### Gat: `EnvironmentColumnName` klopt niet bij een Bronze-lakehouse
+### `EnvironmentColumnName` bij een Bronze-lakehouse — gat, en de reparatie
 
-| Feature Needed | Reason | Affected Notebook | Example/Workaround | User Story ID |
-|---|---|---|---|---|
-| De omgevingswaarde afleiden op een manier die voor beide Bronze-vormen klopt | Het pad heeft bij een lakehouse één segment meer dan bij een opslagaccount | `notebook_ProcessToSilver_Generic_Child.py` (regel 191-196) | Zie hieronder | nog aan te vragen |
-
-De omgevingskolom wordt gevuld met het **vijfde** padsegment van de bestandsnaam:
-`element_at(split(col('FileName'), '/'), 5)`. Dat klopt voor een opslagaccount
+**Wat het gat was.** De omgevingskolom werd gevuld met het **vijfde** padsegment van de
+bestandsnaam: `element_at(split(col('FileName'), '/'), 5)`. Dat klopt voor een opslagaccount
 (`abfss://container@account.../{source}/{env}/…` → segment 5 is de omgeving), maar niet voor een
 lakehouse: daar staat er nog een item-segment tussen
 (`abfss://workspace@onelake.../{lakehouse}/Files/{source}/{env}/…`), waardoor segment 5 het woord
-`Files` is.
-
-**Gevolg:** elke bron van een klant met Bronze in een lakehouse die `EnvironmentColumnName`
-gebruikt, krijgt stil de waarde `Files` in die kolom. Geen foutmelding, geen lege waarde — een
+`Files` is. Gevolg: stil de waarde `Files` in die kolom. Geen foutmelding, geen lege waarde — een
 verkeerde waarde.
 
-Vastgesteld uit de code en uit de padopbouw in `scripts/lib/bronze_target.py`; niet waargenomen
-in een draaiende run. Voor deze bron is de scherpte er iets af nu er één vaste
-vestigingsaanduiding is: er valt niets te onderscheiden, dus die kolom is hier waarschijnlijk
-niet nodig. Het gat blijft staan voor de klant die hem wél nodig heeft.
+**Wat er is veranderd.** De broncode telt inmiddels vanaf het eind:
+`element_at(split(col('FileName'), '/'), -5)`, met de onderbouwing in de code ernaast — de staart
+onder de bronmap ligt vast (`{source}/{env}/{entity}/processing/{tijdstempel}/{bestand}`), het
+voorvoegsel erboven niet. (`notebook_ProcessToSilver_Generic_Child.py`, regel 191-203.)
+
+**Wat er níet is vastgesteld:** of de DEV-werkruimte die versie van het notebook draait. De
+reparatie staat in de broncode van het framework; welke versie er in de werkruimte is
+gedeployed, is niet gemeten. Zolang dat niet is nagegaan, is `Files` in die kolom een uitkomst
+die je nog kunt tegenkomen — en het valt alleen op als je ernaar kijkt.
+
+Voor deze bron is de scherpte er iets af nu er één vaste vestigingsaanduiding is: er valt niets te
+onderscheiden, dus die kolom is hier waarschijnlijk niet nodig. Het punt blijft staan voor de
+klant die hem wél nodig heeft.
 
 ## Risico's
 
@@ -360,9 +472,10 @@ bericht wegschrijft naar `incoming/`. Die ontvanger bestaat niet in dit platform
 belangrijkste openstaande vraag; de rest van de ontsluiting hangt eraan.
 
 **2. De leverancier scheidt zijn berichten misschien niet.** Het adrespatroon gaat uit van één
-map per soort. Levert de bron alles in één stroom, dan is er één soort en dus één map — dat werkt
-— maar dan zit de scheiding in de data en niet in het pad, en die moet ergens anders worden
-gemaakt. Dat blijkt pas uit het antwoord op vraag 4 hieronder.
+map per soort. Levert de bron alles in één stroom, dan is er één soort en dus één map. Dat werkt:
+de scheiding kan in sectie 4 en 5 worden gemaakt in plaats van in het pad — zie *Eén map is niet
+hetzelfde als één Silver-tabel*. Wat dan wél verandert, is dat de vorm van de berichten die
+scheiding moet dragen, en dat blijkt pas uit het antwoord op vraag 4.
 
 **3. De identiteitsvorm kan een tenantbrede instelling meebrengen.** Ondersteunt de leverancier
 alleen een gebruikersaanmelding, dan komt optie B in beeld en daarmee een instelling die alle
@@ -372,28 +485,60 @@ beheerder van de tenant, en hij hoort genomen te worden op het moment dat het an
 
 **4. De vertaalslag in de mapnaam.** Omdat de mapnaam wordt genormaliseerd en niet overgenomen,
 staat er in het adres een ander woord dan de leverancier zelf gebruikt. Bij elk adres hoort dus
-de mededeling welke soort het is, en een vertaalfout zit in een adres dat al is doorgegeven.
+de mededeling welke soort het is, en een vertaalfout zit in een adres dat al is doorgegeven. Voor
+`booking` geldt bovendien het omgekeerde probleem: die naam is niet vertaald maar verzonnen, en
+er is nog geen leveranciersterm waaraan hij gekoppeld kan worden.
 
-**5. Persoonsgegevens.** Boekingsberichten bevatten vrijwel zeker gastgegevens (naam, adres,
-contactgegevens). Drie gevolgen: het eerste voorbeeldbericht hoort niet in een chat of in dit
-rapport terecht te komen, het schrijfrecht op de map hoort zo smal mogelijk te zijn, en een
-voorbeeld in een later rapport is geredigeerd — veldnamen blijven, waarden gaan eruit.
+**5. Persoonsgegevens.** Boekingsberichten bevatten gastgegevens (naam, adres, contactgegevens,
+geboortedatum). **Dat is hier geen verwachting meer maar een gemeten feit:** het materiaal dat in
+Bronze staat, staat er als origineel — bewust, want Bronze hoort de echte levering te houden.
+
+Vier gevolgen:
+
+| Gevolg | Wat het betekent |
+|---|---|
+| Wie deze map inspecteert, werkt met persoonsgegevens | De inspectiescripts maskeren standaard; `--no-redact` bestaat en zet dat uit. Dat is een bewuste handeling en hoort dat te blijven |
+| Een voorbeeld in een rapport is altijd geredigeerd | Veldnamen blijven, waarden gaan eruit — vóór het rapport wordt weggeschreven, nooit erna |
+| Het schrijfrecht op de map hoort zo smal mogelijk te zijn | Zie *Hoe smal het schrijfrecht kan* |
+| Ruw materiaal hoort niet in een gesprek | Ook niet "even ter illustratie" |
+
+**Twee gaten in die maskering zijn op 08-09-2026 gedicht, met tests** (`scripts/lib/pii_redact.py`,
+`scripts/tests/test_pii_redact.py`). Ze zijn allebei op deze bron gevonden:
+
+| Gat | Waarom het bestond | Wat er nu gebeurt |
+|---|---|---|
+| `birthday` en `verjaardag` werden niet als persoonsgegeven herkend | De tokenizer splitst een aaneengeschreven woord niet, dus `birth` ving `BirthDate` en `dateOfBirth` wél en `birthday` niet. In een steekproef op het gelande materiaal stonden 527 geboortedatums onafgeschermd | Beide woorden staan er als heel woord bij |
+| Vrije tekst in een maatwerkveld-container bleef staan | Het waardeveld binnen zo'n container heeft geen herkenbare naam, dus een deny-list op veldnamen kan er niets mee | Binnen zo'n container geldt de omgekeerde regel: elke **tekst** is persoonlijk tot het tegendeel blijkt. Getallen en ja/nee blijven staan — die dragen de structuur |
+
+**Wat dit niet doet:** het maskeert wat er uit een inspectiescript komt, niet wat er in Bronze
+staat. Daar staan de originelen, en dat is de bedoeling.
 
 **6. Een adres bij een leverancier is duur om te wijzigen.** Het adres wijst naar de omgeving die
 er vandaag is. Komt er later een productieomgeving bij, dan verandert het adres en moet de
 leverancier het opnieuw instellen. Met één adres per berichtsoort geldt dat bovendien per soort.
 
+**7. Het gelande materiaal kan voor een levering worden aangezien.** Er staan 231 bestanden in een
+ontvangstmap met een tijdstempel van vanavond. Aan de data is niet te zien dat wij ze daar hebben
+gezet, en `--action land` laat geen spoor achter dat dat onderscheid draagt. Wie deze map over
+een paar weken tegenkomt zonder dit rapport, ziet een lopende koppeling. Dat is precies wat dit
+rapport moet voorkomen, en het is de reden dat de herkomst hierboven een eigen sectie heeft.
+
 ## Open vragen / UNKNOWNs
 
-Aan de leverancier:
+> **Status op 08-09-2026: er is op geen van de vragen aan de leverancier een antwoord ontvangen.**
+> Ze zijn hieronder ongewijzigd blijven staan. Vraag 1 tot en met 4 zijn degene waar deze bron op
+> wacht; dat het gelande materiaal er is, verandert daar niets aan — het komt niet van de
+> leverancier en beantwoordt dus geen enkele van deze vragen.
 
-1. Zetten jullie bestanden neer, of stuurt jullie systeem per boeking een bericht naar een
-   webadres dat wij opgeven? *(beslist welke route haalbaar is)*
-2. **Met welke identiteitsvormen kan uw systeem zich aanmelden bij een Microsoft-omgeving?** Een
-   eigen app-registratie of dienstidentiteit met een clientgeheim of certificaat, een
-   gebruikersaccount dat interactief aanmeldt, of een gastaccount in onze omgeving? En kunt u
-   alleen naar SFTP, FTP of een deellink schrijven? *(OneLake kent uitsluitend Entra ID; dit
-   antwoord maakt bovendien de uitgestelde identiteitskeuze — zie hieronder)*
+Aan de leverancier — **alle onbeantwoord**:
+
+1. **[onbeantwoord]** Zetten jullie bestanden neer, of stuurt jullie systeem per boeking een
+   bericht naar een webadres dat wij opgeven? *(beslist welke route haalbaar is)*
+2. **[onbeantwoord]** **Met welke identiteitsvormen kan uw systeem zich aanmelden bij een
+   Microsoft-omgeving?** Een eigen app-registratie of dienstidentiteit met een clientgeheim of
+   certificaat, een gebruikersaccount dat interactief aanmeldt, of een gastaccount in onze
+   omgeving? En kunt u alleen naar SFTP, FTP of een deellink schrijven? *(OneLake kent uitsluitend
+   Entra ID; dit antwoord maakt bovendien de uitgestelde identiteitskeuze — zie hieronder)*
 
    > **Waarom deze vraag zwaarder weegt dan hij oogt.** Een dienstidentiteit houdt het
    > schrijfrecht bij `tomm/tbs/`. Een gastaccount vereist daarnáást een **tenantbrede**
@@ -401,25 +546,39 @@ Aan de leverancier:
    > dat verschil hoort zichtbaar te zijn op het moment dat dit antwoord wordt gelezen. Zie
    > *De identiteitsvorm — een uitgestelde keuze*.
 
-3. Kan de inhoud als **JSON** worden aangeleverd? *(alles daarbuiten vraagt bouwwerk)*
-4. **Welke berichtsoorten stuurt u, en levert u ze gescheiden aan?** Boekingen, wijzigingen,
-   annuleringen, gastgegevens — en hoe noemt u ze zelf? *(dit is het enige dat het adres nog
-   mist: elke soort wordt een map, en hun eigen benaming is nodig om te kunnen vertalen)*
-5. Levert u per vestiging of park apart aan, of alles in één stroom? *(niet meer bepalend voor het
-   pad — dat kent één vaste vestigingsaanduiding — maar wel voor de vraag of één map per soort
-   volstaat)*
-6. Hoe vaak wordt er geleverd, en is dat steeds de volledige set of alleen wat is gewijzigd?
-7. Hoe heten de bestanden, en welke codering hebben ze?
-8. Wie is de contactpersoon voor deze koppeling?
+3. **[onbeantwoord]** Kan de inhoud als **JSON** worden aangeleverd? *(alles daarbuiten vraagt
+   bouwwerk)*
+4. **[onbeantwoord]** **Welke berichtsoorten stuurt u, en levert u ze gescheiden aan?** Boekingen,
+   wijzigingen, annuleringen, gastgegevens — en hoe noemt u ze zelf? *(dit is het enige dat het
+   adres nog mist: elke soort wordt een map, en hun eigen benaming is nodig om te kunnen
+   vertalen. Zolang deze vraag openstaat, is `booking` een werknaam van ons)*
+5. **[onbeantwoord]** Levert u per vestiging of park apart aan, of alles in één stroom? *(niet meer
+   bepalend voor het pad — dat kent één vaste vestigingsaanduiding, ook die door ons gekozen —
+   maar wel voor de vraag of één map per soort volstaat)*
+6. **[onbeantwoord]** Hoe vaak wordt er geleverd, en is dat steeds de volledige set of alleen wat
+   is gewijzigd?
+7. **[onbeantwoord]** Hoe heten de bestanden, en welke codering hebben ze?
+8. **[onbeantwoord]** Wie is de contactpersoon voor deze koppeling?
 
 Aan onze kant:
 
 9. Welke genormaliseerde mapnaam krijgt elke bevestigde soort? *(mechanisch zodra de lijst uit
    vraag 4 er is: Engels, enkelvoud, kleine letters; `all` valt af)*
-10. Wie richt de Entra-identiteit en het schrijfrecht op `tomm/tbs/` in, en wanneer? Er is geen
+10. Blijft de bestaande map `booking` heten wanneer vraag 4 is beantwoord, of wordt hij hernoemd?
+    Hernoemen is goedkoop zolang het adres nog niet aan de leverancier is doorgegeven, en duur
+    daarna.
+11. Wie richt de Entra-identiteit en het schrijfrecht op `tomm/tbs/` in, en wanneer? Er is geen
     script voor; het is een handmatige beheerhandeling, en hij komt ná het aanmaken van de map.
-11. Dienstidentiteit of gastaccount? **Uitgesteld tot het antwoord op vraag 2** — de opties en hun
+12. Dienstidentiteit of gastaccount? **Uitgesteld tot het antwoord op vraag 2** — de opties en hun
     kosten staan onder *De identiteitsvorm — een uitgestelde keuze*.
+13. Draait de DEV-werkruimte de versie van het verwerkingsnotebook waarin de omgevingskolom is
+    gerepareerd? Niet vastgesteld; zie *`EnvironmentColumnName` bij een Bronze-lakehouse*.
 
 **Klaar om verder te gaan is deze bron pas na twee dingen:** een antwoord op vraag 1 tot en met 4,
-en één echt aangeleverd bericht. Voor dat bericht er is, wordt er geen schema opgesteld.
+en één echt aangeleverd bericht **van de leverancier**. Geen van beide is er.
+
+**Het gelande testmateriaal telt hier niet voor mee.** Het is bruikbaar om de verwerking te
+beproeven en om er secties 3 tot en met 5 op te tellen, en dat is ook wat ermee gebeurt — maar
+wat daaruit komt beschrijft ons eigen materiaal. Wordt dat als vastgesteld gelezen, dan staat er
+een schema in de config dat de leverancier nooit heeft bevestigd, op een adres dat hij nooit heeft
+gekregen, onder een soortnaam die hij nooit heeft genoemd.
