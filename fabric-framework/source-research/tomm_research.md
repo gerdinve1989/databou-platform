@@ -224,13 +224,36 @@ meekomt zonder dat er iets buiten deze bron open gaat.
 > handmatige beheerhandeling, en dat blijft het tot iemand hem automatiseert. Het aanmaken van de
 > map is inmiddels wél geautomatiseerd — zie *De map aanmaken* — maar dat is de andere helft.
 
+### De identiteitsvorm — een uitgestelde keuze
+
+**Status: uitgesteld, in afwachting van het antwoord van de leverancier.** Dit is geen gat in het
+onderzoek en geen vergeten beslissing: de keuze is bewust naar achteren geschoven omdat het
+antwoord van de leverancier hem grotendeels maakt. Wat zij ondersteunen, bepaalt wat er
+overblijft.
+
+| Optie | Wat het kost, en hoe ver het reikt |
+|---|---|
+| **A — een dienstidentiteit** (app-registratie in de tenant van de klant) | Het schrijfrecht blijft bij `tomm/tbs/` en gaat geen millimeter verder. Geen tenantbrede instelling. Past bij een koppeling waarin een systeem levert en geen mens |
+| **B — een gastaccount** voor een persoon bij de leverancier | Werkt ook wanneer er met de hand wordt geüpload. Maar het toekennen van een OneLake-beveiligingsrol aan een gast vereist dat de externe-samenwerkingsinstelling op *Guest users have the same access as members (most inclusive)* staat — **tenantbreed**, en dus een beslissing die alle gasten in de hele tenant raakt, niet alleen deze map |
+| **C — wachten** tot de leverancier heeft geantwoord | De huidige stand |
+
+**Dit verschil is de reden dat de vraag aan de leverancier zwaarder weegt dan hij oogt.** A en B
+kosten niet hetzelfde: de ene blijft binnen deze bron, de andere zet een tenantbrede knop om.
+Wie het antwoord van de leverancier leest, hoort dat verschil op dát moment te zien — niet pas
+wanneer een beheerder de instelling openzet. Daarom is vraag 2 hieronder geformuleerd als "welke
+identiteitsvormen ondersteunt uw systeem" en niet als "kunt u naar een Microsoft-omgeving
+schrijven": alleen de eerste vorm van de vraag levert een antwoord op dat de keuze werkelijk
+maakt in plaats van hem terug te leggen.
+
 ### Wat er verder nodig is
+
+Ongeacht welke identiteitsvorm het wordt:
 
 | Voorwaarde | Waarom, en wat het raakt |
 |---|---|
-| Een Entra-identiteit voor de leverancier in de tenant van de klant | Een app-registratie (dienstidentiteit) of een gastaccount. Zonder identiteit is er niets om recht aan te geven |
+| Een Entra-identiteit voor de leverancier in de tenant van de klant | Zonder identiteit is er niets om recht aan te geven. Welke vorm: zie hierboven |
 | Tenantinstelling *Users can access data stored in OneLake with apps external to Fabric* | Vereist voor toegang tot OneLake buiten Fabric om. Wordt makkelijk over het hoofd gezien |
-| Bij een **gastaccount**: de externe-samenwerkingsinstelling op *Guest users have the same access as members (most inclusive)* | Voorwaarde voor het toekennen van een OneLake-beveiligingsrol aan een gast. Dit is een **tenantbrede** instelling, en dus een beveiligingsbeslissing die verder reikt dan deze ene map — een dienstidentiteit vermijdt hem |
+| De map moet bestaan vóór het recht wordt toegekend | Zie *De map aanmaken* |
 
 ### Secrets
 
@@ -341,16 +364,22 @@ map per soort. Levert de bron alles in één stroom, dan is er één soort en du
 — maar dan zit de scheiding in de data en niet in het pad, en die moet ergens anders worden
 gemaakt. Dat blijkt pas uit het antwoord op vraag 4 hieronder.
 
-**3. De vertaalslag in de mapnaam.** Omdat de mapnaam wordt genormaliseerd en niet overgenomen,
+**3. De identiteitsvorm kan een tenantbrede instelling meebrengen.** Ondersteunt de leverancier
+alleen een gebruikersaanmelding, dan komt optie B in beeld en daarmee een instelling die alle
+gasten in de tenant raakt. Dat is geen detail van deze koppeling maar een beslissing van de
+beheerder van de tenant, en hij hoort genomen te worden op het moment dat het antwoord binnenkomt
+— niet stilzwijgend wanneer iemand het recht probeert toe te kennen en merkt dat het niet lukt.
+
+**4. De vertaalslag in de mapnaam.** Omdat de mapnaam wordt genormaliseerd en niet overgenomen,
 staat er in het adres een ander woord dan de leverancier zelf gebruikt. Bij elk adres hoort dus
 de mededeling welke soort het is, en een vertaalfout zit in een adres dat al is doorgegeven.
 
-**4. Persoonsgegevens.** Boekingsberichten bevatten vrijwel zeker gastgegevens (naam, adres,
+**5. Persoonsgegevens.** Boekingsberichten bevatten vrijwel zeker gastgegevens (naam, adres,
 contactgegevens). Drie gevolgen: het eerste voorbeeldbericht hoort niet in een chat of in dit
 rapport terecht te komen, het schrijfrecht op de map hoort zo smal mogelijk te zijn, en een
 voorbeeld in een later rapport is geredigeerd — veldnamen blijven, waarden gaan eruit.
 
-**5. Een adres bij een leverancier is duur om te wijzigen.** Het adres wijst naar de omgeving die
+**6. Een adres bij een leverancier is duur om te wijzigen.** Het adres wijst naar de omgeving die
 er vandaag is. Komt er later een productieomgeving bij, dan verandert het adres en moet de
 leverancier het opnieuw instellen. Met één adres per berichtsoort geldt dat bovendien per soort.
 
@@ -360,9 +389,18 @@ Aan de leverancier:
 
 1. Zetten jullie bestanden neer, of stuurt jullie systeem per boeking een bericht naar een
    webadres dat wij opgeven? *(beslist welke route haalbaar is)*
-2. Als het bestanden zijn: kunnen jullie schrijven naar een Microsoft-omgeving waarvoor u zich
-   met een Microsoft-identiteit aanmeldt — of alleen naar SFTP, FTP of een deellink?
-   *(OneLake kent alleen het eerste)*
+2. **Met welke identiteitsvormen kan uw systeem zich aanmelden bij een Microsoft-omgeving?** Een
+   eigen app-registratie of dienstidentiteit met een clientgeheim of certificaat, een
+   gebruikersaccount dat interactief aanmeldt, of een gastaccount in onze omgeving? En kunt u
+   alleen naar SFTP, FTP of een deellink schrijven? *(OneLake kent uitsluitend Entra ID; dit
+   antwoord maakt bovendien de uitgestelde identiteitskeuze — zie hieronder)*
+
+   > **Waarom deze vraag zwaarder weegt dan hij oogt.** Een dienstidentiteit houdt het
+   > schrijfrecht bij `tomm/tbs/`. Een gastaccount vereist daarnáást een **tenantbrede**
+   > instelling die alle gasten in de hele tenant raakt. Die twee kosten dus niet hetzelfde, en
+   > dat verschil hoort zichtbaar te zijn op het moment dat dit antwoord wordt gelezen. Zie
+   > *De identiteitsvorm — een uitgestelde keuze*.
+
 3. Kan de inhoud als **JSON** worden aangeleverd? *(alles daarbuiten vraagt bouwwerk)*
 4. **Welke berichtsoorten stuurt u, en levert u ze gescheiden aan?** Boekingen, wijzigingen,
    annuleringen, gastgegevens — en hoe noemt u ze zelf? *(dit is het enige dat het adres nog
@@ -380,8 +418,8 @@ Aan onze kant:
    vraag 4 er is: Engels, enkelvoud, kleine letters; `all` valt af)*
 10. Wie richt de Entra-identiteit en het schrijfrecht op `tomm/tbs/` in, en wanneer? Er is geen
     script voor; het is een handmatige beheerhandeling, en hij komt ná het aanmaken van de map.
-11. Wordt het een dienstidentiteit of een gastaccount? Een gast vraagt een tenantbrede
-    instelling; een dienstidentiteit niet.
+11. Dienstidentiteit of gastaccount? **Uitgesteld tot het antwoord op vraag 2** — de opties en hun
+    kosten staan onder *De identiteitsvorm — een uitgestelde keuze*.
 
 **Klaar om verder te gaan is deze bron pas na twee dingen:** een antwoord op vraag 1 tot en met 4,
 en één echt aangeleverd bericht. Voor dat bericht er is, wordt er geen schema opgesteld.
