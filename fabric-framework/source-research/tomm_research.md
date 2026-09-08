@@ -83,8 +83,7 @@ leverancier niet kan wat hierboven wordt verondersteld:
 
 Dat is geen conventie maar code: `move_files_to_processing` bouwt exact dit pad
 (`notebook_Functions_Silver.py`, regel 119-121) en `resolve_bronze_target` bevestigt dezelfde
-wortel voor de scriptkant (`scripts/lib/bronze_target.py`). Bij een lakehouse-Bronze is
-`{Bronze Files}` gelijk aan `{lakehouse}/Files`; bij een opslagaccount is het de container.
+wortel voor de scriptkant (`scripts/lib/bronze_target.py`).
 
 ### Het gekozen adrespatroon
 
@@ -109,17 +108,61 @@ gescheiden aanlevert.
 één adres per soort. Elke bevestigde soort levert een map op, en elke map is een adres dat de
 leverancier apart moet instellen.
 
+### Hoe een soort aan zijn mapnaam komt
+
+**De mapnaam wordt genormaliseerd naar de naamgevingsconventie van de klant** — Engels,
+enkelvoud, kleine letters — in plaats van de benaming van de leverancier letterlijk over te
+nemen. Dat houdt de mapstructuur in lijn met de Silver-tabellen die er straks uit volgen, en
+voorkomt dat het jargon van een leverancier de indeling bepaalt.
+
+**Het nadeel hoort erbij en verdwijnt niet door de keuze:** bij elk adres dat wordt doorgegeven
+moet erbij staan wélke soort van de leverancier het is, anders stelt hij de verkeerde map in. En
+een vertaalfout landt in een adres dat al is doorgegeven — terugdraaien betekent dan een tweede
+ronde langs de leverancier.
+
+Daarom blijft de vraag hoe de leverancier zijn soorten zélf noemt onverminderd nodig: niet meer
+om over te nemen, maar om te kunnen vertalen en om elk adres aan de juiste soort te kunnen
+koppelen.
+
 ### Valkuilen bij de mapnaam van een soort
 
 **`all` kan geen mapnaam zijn.** Dat woord is in de parameterverwerking gereserveerd voor "alle
 waarden uit de config" (`parse_source_env_entity_parameter`). Een map die zo heet, is later niet
-meer los aan te spreken.
+meer los aan te spreken. Het aanmaakcommando hieronder weigert die naam ook.
 
 **Een lege omgevingslijst verwerkt stil niets.** `PossibleEnvironments` moet gevuld zijn; is die
 lijst leeg, dan levert de parser een lege omgevingslijst op, wordt er geen enkele
 verwerkingsmap gebouwd, en meldt de run niets. Met de keuze hierboven bevat die lijst precies
 één waarde, en daarmee is deze valkuil ontweken — maar alleen zolang die waarde er ook echt in
 komt te staan.
+
+### De map aanmaken — wat er wel en niet is geregeld
+
+De ontvangstmap wordt aangemaakt met één commando; verzin er geen eigen weg naartoe:
+
+```bash
+python scripts/bronze_stage.py --profile {profile} --source {source} \
+  --action prepare --env {env} --entity {entity} [--dry-run]
+```
+
+Wat het doet, gemeten in `do_prepare`:
+
+| Gedrag | Betekenis voor deze bron |
+|---|---|
+| Maakt **alleen** `incoming/` aan (met de bovenliggende niveaus) | `processing/` en `archive/` blijven weg tot de verwerking ze zelf schrijft; vooruit aanmaken zou een stap tonen die nooit heeft plaatsgevonden |
+| `--env` en `--entity` zijn **verplicht**, worden nooit afgeleid of standaard ingevuld | Ze worden een segment van het adres dat de leverancier instelt; een gok hoort daar niet |
+| Weigert `all` als waarde voor beide | De valkuil hierboven is afgevangen op het moment dat de map nog niet bestaat, in plaats van later, wanneer hij al bij een leverancier ligt |
+| Leest het pad terug en weigert een adres af te drukken als `incoming` niet in de listing staat | Een geslaagde aanmaakaanroep en een map die er echt staat zijn twee verschillende beweringen — alleen de tweede is een adres waard |
+| Drukt het volledige adres af | Dat afgedrukte adres is wat de leverancier krijgt; het hoeft niet met de hand te worden samengesteld |
+| Werkt voor beide Bronze-vormen en verandert niets wanneer het pad al bestaat | Herhalen is ongevaarlijk |
+| `--dry-run` toont de niveaus en schrijft niets | Te draaien vóór de goedkeuring die bij een schrijfactie hoort |
+
+**Wat het uitdrukkelijk níet doet:** rechten toekennen. Het script zegt het zelf aan het eind van
+een geslaagde run — de map aanmaken opent hem voor niemand. Het schrijfrecht op `tomm/tbs/`
+blijft beheerwerk waarvoor **geen script bestaat**; zie *Toegang en authenticatie*.
+
+De volgorde is daarmee vastgelegd en niet omkeerbaar: eerst de map, dan het recht. Recht kan
+alleen worden toegekend op een map die al bestaat.
 
 ### Levenscyclus van een bestand
 
@@ -142,7 +185,7 @@ framework; wie daarin schrijft, loopt tegen een lopende verwerking aan.
 | `{Bronze Files}` | ligt vast — volgt uit het klantprofiel |
 | `{source}` | ligt vast — `tomm` |
 | `{environment}` | ligt vast — `tbs`, één vaste vestigingsaanduiding |
-| `{entity}` | patroon ligt vast (één map per berichtsoort), **de lijst soorten is `UNKNOWN — needs confirmation`** |
+| `{entity}` | patroon ligt vast (één map per berichtsoort, genormaliseerd genoemd), **de lijst soorten is `UNKNOWN — needs confirmation`** |
 | `incoming` | ligt vast — framework |
 
 ## Toegang en authenticatie
@@ -178,7 +221,8 @@ meekomt zonder dat er iets buiten deze bron open gaat.
 > **Gedocumenteerd, niet geverifieerd.** Bovenstaande komt uit Microsoft Learn (*OneLake security
 > roles, permissions, and scopes*, geraadpleegd 08-09-2026) en is in geen tenant nagemeten. Er
 > bestaat in dit platform **geen script en geen procedure** om zo'n rol in te richten: het is een
-> handmatige beheerhandeling, en dat blijft het tot iemand hem automatiseert.
+> handmatige beheerhandeling, en dat blijft het tot iemand hem automatiseert. Het aanmaken van de
+> map is inmiddels wél geautomatiseerd — zie *De map aanmaken* — maar dat is de andere helft.
 
 ### Wat er verder nodig is
 
@@ -250,9 +294,11 @@ Er is niets om op te schatten: er is nog geen levering geweest.
 | Punt | Oordeel |
 |---|---|
 | `push` wordt herkend en de ingestie wordt overgeslagen | werkt |
+| Aanmaken van de ontvangstmap, met terugleescontrole | werkt — `bronze_stage.py --action prepare` |
 | Verplaatsen van `incoming/` naar `processing/`, met telcontrole | werkt |
 | Archivering na verwerking, ook op een lakehouse | werkt |
 | Lezen van de aangeleverde bestanden | **alleen JSON** — zie *Formaat en codering* |
+| Toekennen van schrijfrecht aan een externe partij | **geen script** — handmatige beheerhandeling |
 | Afleiden van de omgevingskolom bij een lakehouse-Bronze | **gat** — zie hieronder |
 
 ### Gat: `EnvironmentColumnName` klopt niet bij een Bronze-lakehouse
@@ -295,12 +341,16 @@ map per soort. Levert de bron alles in één stroom, dan is er één soort en du
 — maar dan zit de scheiding in de data en niet in het pad, en die moet ergens anders worden
 gemaakt. Dat blijkt pas uit het antwoord op vraag 4 hieronder.
 
-**3. Persoonsgegevens.** Boekingsberichten bevatten vrijwel zeker gastgegevens (naam, adres,
+**3. De vertaalslag in de mapnaam.** Omdat de mapnaam wordt genormaliseerd en niet overgenomen,
+staat er in het adres een ander woord dan de leverancier zelf gebruikt. Bij elk adres hoort dus
+de mededeling welke soort het is, en een vertaalfout zit in een adres dat al is doorgegeven.
+
+**4. Persoonsgegevens.** Boekingsberichten bevatten vrijwel zeker gastgegevens (naam, adres,
 contactgegevens). Drie gevolgen: het eerste voorbeeldbericht hoort niet in een chat of in dit
 rapport terecht te komen, het schrijfrecht op de map hoort zo smal mogelijk te zijn, en een
 voorbeeld in een later rapport is geredigeerd — veldnamen blijven, waarden gaan eruit.
 
-**4. Een adres bij een leverancier is duur om te wijzigen.** Het adres wijst naar de omgeving die
+**5. Een adres bij een leverancier is duur om te wijzigen.** Het adres wijst naar de omgeving die
 er vandaag is. Komt er later een productieomgeving bij, dan verandert het adres en moet de
 leverancier het opnieuw instellen. Met één adres per berichtsoort geldt dat bovendien per soort.
 
@@ -316,7 +366,7 @@ Aan de leverancier:
 3. Kan de inhoud als **JSON** worden aangeleverd? *(alles daarbuiten vraagt bouwwerk)*
 4. **Welke berichtsoorten stuurt u, en levert u ze gescheiden aan?** Boekingen, wijzigingen,
    annuleringen, gastgegevens — en hoe noemt u ze zelf? *(dit is het enige dat het adres nog
-   mist: elke soort wordt een map)*
+   mist: elke soort wordt een map, en hun eigen benaming is nodig om te kunnen vertalen)*
 5. Levert u per vestiging of park apart aan, of alles in één stroom? *(niet meer bepalend voor het
    pad — dat kent één vaste vestigingsaanduiding — maar wel voor de vraag of één map per soort
    volstaat)*
@@ -326,10 +376,10 @@ Aan de leverancier:
 
 Aan onze kant:
 
-9. Nemen wij de benaming van de leverancier over als mapnaam per soort, of normaliseren wij naar
-   de eigen conventie? *(te beslissen zodra de lijst uit vraag 4 er is; `all` valt hoe dan ook af)*
-10. Wie richt de Entra-identiteit en het mapgebonden schrijfrecht in, en wanneer? Er is geen
-    script voor; het is een handmatige beheerhandeling.
+9. Welke genormaliseerde mapnaam krijgt elke bevestigde soort? *(mechanisch zodra de lijst uit
+   vraag 4 er is: Engels, enkelvoud, kleine letters; `all` valt af)*
+10. Wie richt de Entra-identiteit en het schrijfrecht op `tomm/tbs/` in, en wanneer? Er is geen
+    script voor; het is een handmatige beheerhandeling, en hij komt ná het aanmaken van de map.
 11. Wordt het een dienstidentiteit of een gastaccount? Een gast vraagt een tenantbrede
     instelling; een dienstidentiteit niet.
 
