@@ -84,12 +84,6 @@ Formaat, sleutel, watermerk, volume en leveringspatroon blijven daarom `UNKNOWN 
 confirmation`. Ze zijn af te lezen aan het gelande materiaal, maar dat materiaal is van ons, en
 een eigenschap ervan is geen eigenschap van de bron.
 
-> **Over de betrouwbaarheid van deze meting.** `bronze_inspect.py` is op 08-09-2026 gerepareerd:
-> op een Bronze-lakehouse gaf de listing de héle lakehouse terug in plaats van de opgevraagde
-> bron, waardoor een inventarisatie van de ene bron de bestanden van de andere meetelde — met een
-> totaal dat er kloppend uitzag. Metingen met dat script van vóór die reparatie zijn op dit punt
-> onbruikbaar. De meting hierboven is erna gedaan.
-
 ## Leveringstype en route
 
 ### Leveringstype
@@ -240,8 +234,8 @@ Bronze is beland. Drie eigenschappen die er in dit dossier toe doen:
 | Alleen naar `incoming/`, nooit naar `processing/` | Het volgt dezelfde weg als een echte levering, dus de verwerking is er eerlijk mee te beproeven |
 | Weigert wanneer `incoming/` al gevuld is, tenzij `--yes` | Het framework leest alles wat er staat; twee keer landen levert elke record twee keer op |
 
-**Wat het script niet kan, en dit rapport dus wel moet doen:** vastleggen dat de bestanden er
-door ons zijn gezet. Aan het materiaal in Bronze is dat niet te zien.
+**Aan het materiaal in Bronze is niet te zien dat wij het daar hebben gezet.** Bestanden dragen
+hun herkomst niet met zich mee. Dit rapport is de plek waar die herkomst staat vastgelegd.
 
 ### Levenscyclus van een bestand
 
@@ -298,10 +292,9 @@ indeling: het recht kan op `tomm/tbs/` staan, waarmee elke nieuwe berichtsoort e
 meekomt zonder dat er iets buiten deze bron open gaat.
 
 > **Gedocumenteerd, niet geverifieerd.** Bovenstaande komt uit Microsoft Learn (*OneLake security
-> roles, permissions, and scopes*, geraadpleegd 08-09-2026) en is in geen tenant nagemeten. Er
-> bestaat in dit platform **geen script en geen procedure** om zo'n rol in te richten: het is een
-> handmatige beheerhandeling, en dat blijft het tot iemand hem automatiseert. Het aanmaken van de
-> map is inmiddels wél geautomatiseerd — zie *De map aanmaken* — maar dat is de andere helft.
+> roles, permissions, and scopes*, geraadpleegd 08-09-2026) en is in geen tenant nagemeten. Het
+> inrichten van zo'n rol is een handmatige beheerhandeling; er is geen script voor. Het aanmaken
+> van de map is dat wél — zie *De map aanmaken* — maar dat is de andere helft.
 
 **Er is vandaag geen schrijfrecht toegekend.** Dat de map bestaat en gevuld is, zegt daar niets
 over: wij hebben hem gevuld met onze eigen identiteit. Voor de leverancier is er nog geen
@@ -390,7 +383,7 @@ Het is verleidelijk om "één map per berichtsoort" te lezen als "één Silver-t
 berichtsoort". Dat volgt er niet uit:
 
 > De verwerking leidt uit één Bronze-entity meerdere Silver-entities af. De Silver-lijst is
-> `[entity_to_process] + de rijen waarvan `ParentEntity` gelijk is aan die entity` — de ouder
+> `[entity_to_process]` plus de rijen waarvan `ParentEntity` gelijk is aan die entity — de ouder
 > eerst, daarna zijn kinderen. (`notebook_ProcessToSilver_Generic_Child.py`, regel 137-146;
 > `05_entity_process_config.template.md` → *Parent / expanded children*.)
 
@@ -432,31 +425,7 @@ is nog geen levering geweest, dus er is nog niets om een patroon uit af te lezen
 | Meerdere Silver-tabellen uit één Bronze-map | werkt — ouder-kindrelatie in sectie 5 |
 | Lezen van de aangeleverde bestanden | **alleen JSON** — zie *Formaat en codering* |
 | Toekennen van schrijfrecht aan een externe partij | **geen script** — handmatige beheerhandeling |
-| Afleiden van de omgevingskolom bij een lakehouse-Bronze | **gerepareerd in de broncode; niet vastgesteld of die versie draait** — zie hieronder |
-
-### `EnvironmentColumnName` bij een Bronze-lakehouse — gat, en de reparatie
-
-**Wat het gat was.** De omgevingskolom werd gevuld met het **vijfde** padsegment van de
-bestandsnaam: `element_at(split(col('FileName'), '/'), 5)`. Dat klopt voor een opslagaccount
-(`abfss://container@account.../{source}/{env}/…` → segment 5 is de omgeving), maar niet voor een
-lakehouse: daar staat er nog een item-segment tussen
-(`abfss://workspace@onelake.../{lakehouse}/Files/{source}/{env}/…`), waardoor segment 5 het woord
-`Files` is. Gevolg: stil de waarde `Files` in die kolom. Geen foutmelding, geen lege waarde — een
-verkeerde waarde.
-
-**Wat er is veranderd.** De broncode telt inmiddels vanaf het eind:
-`element_at(split(col('FileName'), '/'), -5)`, met de onderbouwing in de code ernaast — de staart
-onder de bronmap ligt vast (`{source}/{env}/{entity}/processing/{tijdstempel}/{bestand}`), het
-voorvoegsel erboven niet. (`notebook_ProcessToSilver_Generic_Child.py`, regel 191-203.)
-
-**Wat er níet is vastgesteld:** of de DEV-werkruimte die versie van het notebook draait. De
-reparatie staat in de broncode van het framework; welke versie er in de werkruimte is
-gedeployed, is niet gemeten. Zolang dat niet is nagegaan, is `Files` in die kolom een uitkomst
-die je nog kunt tegenkomen — en het valt alleen op als je ernaar kijkt.
-
-Voor deze bron is de scherpte er iets af nu er één vaste vestigingsaanduiding is: er valt niets te
-onderscheiden, dus die kolom is hier waarschijnlijk niet nodig. Het punt blijft staan voor de
-klant die hem wél nodig heeft.
+| Afleiden van de omgevingskolom bij een lakehouse-Bronze | **niet van toepassing op deze bron** — er is één vaste vestigingsaanduiding, dus er valt niets te onderscheiden en die kolom is hier niet nodig |
 
 ## Risico's
 
@@ -490,38 +459,28 @@ de mededeling welke soort het is, en een vertaalfout zit in een adres dat al is 
 er is nog geen leveranciersterm waaraan hij gekoppeld kan worden.
 
 **5. Persoonsgegevens.** Boekingsberichten bevatten gastgegevens (naam, adres, contactgegevens,
-geboortedatum). **Dat is hier geen verwachting meer maar een gemeten feit:** het materiaal dat in
-Bronze staat, staat er als origineel — bewust, want Bronze hoort de echte levering te houden.
+geboortedatum, vrije tekst in maatwerkvelden). **Dat is hier geen verwachting meer maar een
+gemeten feit:** het materiaal dat in Bronze staat, staat er als origineel — bewust, want Bronze
+hoort de echte levering te houden.
 
 Vier gevolgen:
 
 | Gevolg | Wat het betekent |
 |---|---|
-| Wie deze map inspecteert, werkt met persoonsgegevens | De inspectiescripts maskeren standaard; `--no-redact` bestaat en zet dat uit. Dat is een bewuste handeling en hoort dat te blijven |
+| Wie deze map inspecteert, werkt met persoonsgegevens | De inspectiescripts maskeren standaard; die maskering uitzetten is een bewuste handeling en hoort dat te blijven |
 | Een voorbeeld in een rapport is altijd geredigeerd | Veldnamen blijven, waarden gaan eruit — vóór het rapport wordt weggeschreven, nooit erna |
 | Het schrijfrecht op de map hoort zo smal mogelijk te zijn | Zie *Hoe smal het schrijfrecht kan* |
 | Ruw materiaal hoort niet in een gesprek | Ook niet "even ter illustratie" |
-
-**Twee gaten in die maskering zijn op 08-09-2026 gedicht, met tests** (`scripts/lib/pii_redact.py`,
-`scripts/tests/test_pii_redact.py`). Ze zijn allebei op deze bron gevonden:
-
-| Gat | Waarom het bestond | Wat er nu gebeurt |
-|---|---|---|
-| `birthday` en `verjaardag` werden niet als persoonsgegeven herkend | De tokenizer splitst een aaneengeschreven woord niet, dus `birth` ving `BirthDate` en `dateOfBirth` wél en `birthday` niet. In een steekproef op het gelande materiaal stonden 527 geboortedatums onafgeschermd | Beide woorden staan er als heel woord bij |
-| Vrije tekst in een maatwerkveld-container bleef staan | Het waardeveld binnen zo'n container heeft geen herkenbare naam, dus een deny-list op veldnamen kan er niets mee | Binnen zo'n container geldt de omgekeerde regel: elke **tekst** is persoonlijk tot het tegendeel blijkt. Getallen en ja/nee blijven staan — die dragen de structuur |
-
-**Wat dit niet doet:** het maskeert wat er uit een inspectiescript komt, niet wat er in Bronze
-staat. Daar staan de originelen, en dat is de bedoeling.
 
 **6. Een adres bij een leverancier is duur om te wijzigen.** Het adres wijst naar de omgeving die
 er vandaag is. Komt er later een productieomgeving bij, dan verandert het adres en moet de
 leverancier het opnieuw instellen. Met één adres per berichtsoort geldt dat bovendien per soort.
 
 **7. Het gelande materiaal kan voor een levering worden aangezien.** Er staan 231 bestanden in een
-ontvangstmap met een tijdstempel van vanavond. Aan de data is niet te zien dat wij ze daar hebben
-gezet, en `--action land` laat geen spoor achter dat dat onderscheid draagt. Wie deze map over
-een paar weken tegenkomt zonder dit rapport, ziet een lopende koppeling. Dat is precies wat dit
-rapport moet voorkomen, en het is de reden dat de herkomst hierboven een eigen sectie heeft.
+ontvangstmap met een tijdstempel van vanavond, en aan die bestanden is hun herkomst niet af te
+lezen. Wie deze map over een paar weken tegenkomt zonder dit rapport, ziet een lopende koppeling.
+Dat is precies wat dit rapport moet voorkomen, en het is de reden dat de herkomst hierboven een
+eigen sectie heeft.
 
 ## Open vragen / UNKNOWNs
 
@@ -571,8 +530,6 @@ Aan onze kant:
     script voor; het is een handmatige beheerhandeling, en hij komt ná het aanmaken van de map.
 12. Dienstidentiteit of gastaccount? **Uitgesteld tot het antwoord op vraag 2** — de opties en hun
     kosten staan onder *De identiteitsvorm — een uitgestelde keuze*.
-13. Draait de DEV-werkruimte de versie van het verwerkingsnotebook waarin de omgevingskolom is
-    gerepareerd? Niet vastgesteld; zie *`EnvironmentColumnName` bij een Bronze-lakehouse*.
 
 **Klaar om verder te gaan is deze bron pas na twee dingen:** een antwoord op vraag 1 tot en met 4,
 en één echt aangeleverd bericht **van de leverancier**. Geen van beide is er.
