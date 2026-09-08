@@ -1,7 +1,7 @@
 # Tommy Booking Support — bronresearch (`tomm`)
 
 > **Stand van zaken 08-09-2026: er is nog geen enkel bericht aangeleverd.** Dit rapport legt
-> vast wat er vaststaat over de ontsluiting — het brontype, de route, de padvorm en de
+> vast wat er vaststaat over de ontsluiting — het brontype, de route, het adrespatroon en de
 > toegangsvoorwaarden — en laat alles wat de inhoud betreft expliciet open. Er is bewust géén
 > schema opgesteld: dat kan pas op een echt bericht, nooit op een beschrijving.
 
@@ -86,6 +86,41 @@ Dat is geen conventie maar code: `move_files_to_processing` bouwt exact dit pad
 wortel voor de scriptkant (`scripts/lib/bronze_target.py`). Bij een lakehouse-Bronze is
 `{Bronze Files}` gelijk aan `{lakehouse}/Files`; bij een opslagaccount is het de container.
 
+### Het gekozen adrespatroon
+
+```
+{Bronze Files}/tomm/tbs/{berichtsoort}/incoming/
+```
+
+- `tomm` — de bron.
+- `tbs` — de vestigingsaanduiding. Eén vaste waarde: er wordt niet per park of locatie
+  gescheiden. Wie meerdere vestigingen heeft, herkent ze straks aan een veld in de data en niet
+  aan een map.
+- `{berichtsoort}` — **één map per soort bericht.** Dít is de scheiding die is gekozen.
+- `incoming` — van het framework.
+
+**Welke berichtsoorten er zijn, is `UNKNOWN — needs confirmation`.** Het patroon staat vast, de
+lijst niet. Er is hier bewust geen voorbeeldsoort ingevuld: een verzonnen soort verschijnt als
+een concreet adres en is daarna niet meer te onderscheiden van een adres dat werkelijk is
+afgesproken — terwijl het de leverancier is die bepaalt welke soorten hij stuurt en of hij ze
+gescheiden aanlevert.
+
+**Het gevolg van deze keuze, en het is er een om vooraf te weten:** er is niet één adres maar
+één adres per soort. Elke bevestigde soort levert een map op, en elke map is een adres dat de
+leverancier apart moet instellen.
+
+### Valkuilen bij de mapnaam van een soort
+
+**`all` kan geen mapnaam zijn.** Dat woord is in de parameterverwerking gereserveerd voor "alle
+waarden uit de config" (`parse_source_env_entity_parameter`). Een map die zo heet, is later niet
+meer los aan te spreken.
+
+**Een lege omgevingslijst verwerkt stil niets.** `PossibleEnvironments` moet gevuld zijn; is die
+lijst leeg, dan levert de parser een lege omgevingslijst op, wordt er geen enkele
+verwerkingsmap gebouwd, en meldt de run niets. Met de keuze hierboven bevat die lijst precies
+één waarde, en daarmee is deze valkuil ontweken — maar alleen zolang die waarde er ook echt in
+komt te staan.
+
 ### Levenscyclus van een bestand
 
 ```
@@ -106,18 +141,9 @@ framework; wie daarin schrijft, loopt tegen een lopende verwerking aan.
 |---|---|
 | `{Bronze Files}` | ligt vast — volgt uit het klantprofiel |
 | `{source}` | ligt vast — `tomm` |
-| `{environment}` | `UNKNOWN — needs confirmation`. Dit segment is in dit framework de vestiging, het park of het merk (vergelijk `EnvironmentColumnName`, met waarden als `VestigingId` of `Resort`) — niet dev/prd. Er moet minstens één waarde zijn; zie de valkuil hieronder |
-| `{entity}` | `UNKNOWN — needs confirmation`. De berichtsoort. Hangt af van wat de leverancier stuurt en of dat één stroom is of meerdere |
+| `{environment}` | ligt vast — `tbs`, één vaste vestigingsaanduiding |
+| `{entity}` | patroon ligt vast (één map per berichtsoort), **de lijst soorten is `UNKNOWN — needs confirmation`** |
 | `incoming` | ligt vast — framework |
-
-**Valkuil bij het kiezen van die twee woorden.** `all` is een gereserveerd woord in de
-parameterparser (`parse_source_env_entity_parameter` behandelt `all` als "alle waarden uit de
-config"). Een map die zo heet, is later niet meer los aan te spreken.
-
-**Tweede valkuil, en deze faalt stil.** `PossibleEnvironments` moet gevuld zijn. Is die lijst
-leeg, dan levert de parser een lege omgevingslijst op, wordt er geen enkele verwerkingsmap
-gebouwd, en meldt de run niets: er is dan simpelweg niets te doen. Een bron met een lege
-omgevingslijst verwerkt dus nooit iets, zonder foutmelding.
 
 ## Toegang en authenticatie
 
@@ -145,7 +171,9 @@ hernoemen en verwijderen mogelijk via notebooks, de OneLake file explorer of de 
 Wie Admin, Member of Contributor is, heeft al schrijfrecht en heeft er niets aan.
 
 Broerlekkage bestaat niet: wie recht heeft op een submap mag de bovenliggende mappen alleen
-doorlopen om erbij te komen, en ziet de buurmappen niet.
+doorlopen om erbij te komen, en ziet de buurmappen niet. Dat is bruikbaar bij de gekozen
+indeling: het recht kan op `tomm/tbs/` staan, waarmee elke nieuwe berichtsoort eronder vanzelf
+meekomt zonder dat er iets buiten deze bron open gaat.
 
 > **Gedocumenteerd, niet geverifieerd.** Bovenstaande komt uit Microsoft Learn (*OneLake security
 > roles, permissions, and scopes*, geraadpleegd 08-09-2026) en is in geen tenant nagemeten. Er
@@ -197,6 +225,9 @@ Er is bewust geen schema afgeleid uit productbeschrijvingen of publieke document
 dat als gemeten leest terwijl het geraden is, is schadelijker dan geen schema: de config-builder
 bouwt erop verder en een ontbrekende of verkeerd benoemde kolom faalt niet, die blijft leeg.
 
+Er komt één schema **per berichtsoort**: elke soort is een eigen entity met een eigen map, een
+eigen schema en een eigen Silver-tabel.
+
 ## Sleutel en watermark
 
 `UNKNOWN` — beide vragen (welke velden een bericht uniek maken, en waaraan je ziet dat een
@@ -242,8 +273,9 @@ gebruikt, krijgt stil de waarde `Files` in die kolom. Geen foutmelding, geen leg
 verkeerde waarde.
 
 Vastgesteld uit de code en uit de padopbouw in `scripts/lib/bronze_target.py`; niet waargenomen
-in een draaiende run. Het raakt deze bron zodra er per vestiging of park wordt aangeleverd en die
-code als kolom mee moet.
+in een draaiende run. Voor deze bron is de scherpte er iets af nu er één vaste
+vestigingsaanduiding is: er valt niets te onderscheiden, dus die kolom is hier waarschijnlijk
+niet nodig. Het gat blijft staan voor de klant die hem wél nodig heeft.
 
 ## Risico's
 
@@ -258,17 +290,19 @@ Klopt het, dan levert de bron geen bestanden in een map en is er een ontvanger n
 bericht wegschrijft naar `incoming/`. Die ontvanger bestaat niet in dit platform. Dit is de
 belangrijkste openstaande vraag; de rest van de ontsluiting hangt eraan.
 
-**2. Persoonsgegevens.** Boekingsberichten bevatten vrijwel zeker gastgegevens (naam, adres,
+**2. De leverancier scheidt zijn berichten misschien niet.** Het adrespatroon gaat uit van één
+map per soort. Levert de bron alles in één stroom, dan is er één soort en dus één map — dat werkt
+— maar dan zit de scheiding in de data en niet in het pad, en die moet ergens anders worden
+gemaakt. Dat blijkt pas uit het antwoord op vraag 4 hieronder.
+
+**3. Persoonsgegevens.** Boekingsberichten bevatten vrijwel zeker gastgegevens (naam, adres,
 contactgegevens). Drie gevolgen: het eerste voorbeeldbericht hoort niet in een chat of in dit
 rapport terecht te komen, het schrijfrecht op de map hoort zo smal mogelijk te zijn, en een
 voorbeeld in een later rapport is geredigeerd — veldnamen blijven, waarden gaan eruit.
 
-**3. Een adres bij een leverancier is duur om te wijzigen.** Het adres wijst naar de omgeving die
+**4. Een adres bij een leverancier is duur om te wijzigen.** Het adres wijst naar de omgeving die
 er vandaag is. Komt er later een productieomgeving bij, dan verandert het adres en moet de
-leverancier het opnieuw instellen.
-
-**4. Twee van de segmenten in het adres liggen nog niet vast.** Zolang `{environment}` en
-`{entity}` niet gekozen zijn, is er geen volledig adres om door te geven.
+leverancier het opnieuw instellen. Met één adres per berichtsoort geldt dat bovendien per soort.
 
 ## Open vragen / UNKNOWNs
 
@@ -280,21 +314,24 @@ Aan de leverancier:
    met een Microsoft-identiteit aanmeldt — of alleen naar SFTP, FTP of een deellink?
    *(OneLake kent alleen het eerste)*
 3. Kan de inhoud als **JSON** worden aangeleverd? *(alles daarbuiten vraagt bouwwerk)*
-4. Welke berichtsoorten stuurt u — alleen boekingen, of ook wijzigingen, annuleringen,
-   gastgegevens? *(bepaalt het laatste padsegment)*
-5. Levert u per vestiging of park apart aan, of alles in één stroom? *(bepaalt het
-   omgevingssegment)*
+4. **Welke berichtsoorten stuurt u, en levert u ze gescheiden aan?** Boekingen, wijzigingen,
+   annuleringen, gastgegevens — en hoe noemt u ze zelf? *(dit is het enige dat het adres nog
+   mist: elke soort wordt een map)*
+5. Levert u per vestiging of park apart aan, of alles in één stroom? *(niet meer bepalend voor het
+   pad — dat kent één vaste vestigingsaanduiding — maar wel voor de vraag of één map per soort
+   volstaat)*
 6. Hoe vaak wordt er geleverd, en is dat steeds de volledige set of alleen wat is gewijzigd?
 7. Hoe heten de bestanden, en welke codering hebben ze?
 8. Wie is de contactpersoon voor deze koppeling?
 
 Aan onze kant:
 
-9. Welke woorden komen in `{environment}` en `{entity}` te staan?
+9. Nemen wij de benaming van de leverancier over als mapnaam per soort, of normaliseren wij naar
+   de eigen conventie? *(te beslissen zodra de lijst uit vraag 4 er is; `all` valt hoe dan ook af)*
 10. Wie richt de Entra-identiteit en het mapgebonden schrijfrecht in, en wanneer? Er is geen
     script voor; het is een handmatige beheerhandeling.
 11. Wordt het een dienstidentiteit of een gastaccount? Een gast vraagt een tenantbrede
     instelling; een dienstidentiteit niet.
 
-**Klaar om verder te gaan is deze bron pas na twee dingen:** een antwoord op vraag 1 tot en met 3,
+**Klaar om verder te gaan is deze bron pas na twee dingen:** een antwoord op vraag 1 tot en met 4,
 en één echt aangeleverd bericht. Voor dat bericht er is, wordt er geen schema opgesteld.
