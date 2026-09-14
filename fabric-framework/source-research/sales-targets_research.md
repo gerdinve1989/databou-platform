@@ -2,9 +2,10 @@
 
 > **Stand van zaken 14-09-2026.** Er is één bestand, het is volledig gelezen, en het staat nog
 > nergens in een Fabric-omgeving: het ligt in de demodata van deze codebase. Alles wat hieronder
-> over formaat, kolommen en sleutel staat, is op dát bestand gemeten — niet op een levering. Wat
-> nog niet vaststaat is het ontvangstadres, het leveringsritme en of een volgende levering de
-> vorige vervangt of aanvult; die staan als open vraag.
+> over formaat, kolommen en sleutel staat, is op dát bestand gemeten — niet op een levering. Het
+> ontvangstadres, de omvang van een levering, het ritme, wie aanlevert en de naamgeving zijn op
+> 14-09-2026 door de opdrachtgever vastgesteld; die vijf staan hieronder als besluit en niet meer
+> als open vraag. Vastgesteld is niet gemeten: er is nog geen levering om ze aan af te lezen.
 
 > **Het bestand is een repetitie, en dat is een eigenschap van de meting.** Het is gemaakt bij een
 > demo-brondatabase; later komt er een echt bestand dat er naar verwachting hetzelfde uitziet.
@@ -50,7 +51,24 @@ API, geen database en geen map elders die wij mogen benaderen.
 | Omvang | 5.602 bytes |
 | Regels | 121, inclusief kopregel — dus 120 gegevensregels |
 | Gelezen | **volledig**, alle 120 regels; dit is geen steekproef |
-| Gemeten op | 14-09-2026, met `pandas.read_csv(sep=None, engine="python")`, `csv.reader` en een byte-inspectie van het hele bestand |
+| Gemeten op | 14-09-2026 |
+
+Te reproduceren met:
+
+```bash
+python scripts/source_file_probe.py \
+  --path demo-sources/wide-world-importers/sales-targets-2026.csv \
+  --key SalespersonId,PeriodStart
+```
+
+Regeleinde, byte order mark en aanhalingstekens staan niet in die uitvoer; die drie komen uit een
+byte-inspectie van het hele bestand en staan hieronder apart gemarkeerd.
+
+> **Let op bij het herhalen van die aanroep.** De standaardredactie sloeg hier niets over het
+> hoofd omdat ze niets zag: geen enkele kolomnaam kwam voor op de lijst met persoonsgegevens, dus
+> de namen in `Salesperson` werden voluit afgedrukt. Ze zijn hier met de hand weggelaten. Wie de
+> uitvoer in een document overneemt, doet dat ook — of draait de aanroep met `--shape-only`, die
+> in het geheel geen waarden afdrukt (ook niet voor de kolommen waar ze nuttig zijn).
 
 **Wat deze meting wel en niet bewijst:**
 
@@ -60,11 +78,15 @@ API, geen database en geen map elders die wij mogen benaderen.
 | Dat de kandidaatsleutel over alle 120 regels uniek is — een telling, geen schatting | Dat de sleutel uniek blijft over meerdere leveringen heen |
 | Dat het bestand geen lege waarden, geen aanhalingstekens en geen afwijkende regels bevat | Dat de aanleveraar dat volhoudt |
 
+Een schemavergelijking over meerdere bestanden is **niet** gedaan en kan niet: er is één bestand
+van deze soort.
+
 ## Leveringstype en route
 
 ### Leveringstype
 
-Eén CSV-bestand, met de hand neergezet, periodiek vervangen of aangevuld. Er staat geen ophaalstap
+Eén CSV-bestand, met de hand neergezet, en bij elke levering **vervangen** in plaats van aangevuld
+— zie *Volume en leveringspatroon*, waar dat besluit staat. Er staat geen ophaalstap
 tussen, en er is geen tussenopslag: de enige plek waar het bestand kan landen is de ontvangstmap in
 Bronze (zie hieronder waarom er geen alternatief is).
 
@@ -101,30 +123,40 @@ maar een los te bouwen en te onderhouden onderdeel.
 Dat is geen conventie maar code: `move_files_to_processing` bouwt exact dit pad
 (`notebook_Functions_Silver.py`, regel 119-121).
 
-### Wat vastligt en wat nog gekozen moet worden
+### Wat vastligt, en wat op 14-09-2026 is gekozen
 
 | Segment | Status |
 |---|---|
 | `{Bronze Files}` | ligt vast — volgt uit het klantprofiel |
 | `{source}` | ligt vast — `sales-targets` |
-| `{environment}` | **`UNKNOWN — needs confirmation`.** Eén vaste waarde volstaat: er wordt niet per vestiging of per aanleveraar gescheiden. Welke waarde dat is, is een keuze |
-| `{entity}` | **`UNKNOWN — needs confirmation`.** Eén map, want één soort bestand. De naam is een keuze; de conventie voor entitynamen is snake_case, Engels, enkelvoud |
+| `{environment}` | **`default`** — gekozen 14-09-2026. Eén vast woord, in elke omgeving hetzelfde, zodat wie aanlevert bij een promotie naar productie niets aan zijn instelling hoeft te veranderen. Er wordt niet per vestiging of per aanleveraar gescheiden |
+| `{entity}` | **`sales_target`** — gekozen 14-09-2026. Eén map, want één soort bestand; snake_case, Engels, enkelvoud, zoals de conventie voor entitynamen vraagt |
 | `incoming` | ligt vast — framework |
 
-**Waarom dit niet wordt ingevuld.** Elk segment wordt een deel van het adres waar iemand zijn
-bestand naartoe brengt. Een afgeleide of een werknaam die eenmaal in een listing staat, leest na een
-paar weken als een afspraak — hij is concreet, hij bestaat, en er staan bestanden in. De keuze hoort
-vóór het aanmaken gemaakt te worden, niet erna.
+Daarmee is het adres volledig:
+
+```
+{Bronze Files}/sales-targets/default/sales_target/incoming/
+```
+
+**Wat dat vaste woord wel en niet doet.** Het houdt het deel van het adres ná de wortel in elke
+omgeving gelijk. De wortel zelf — `{Bronze Files}` — is de opslag van één werkruimte en hoort dus
+bij de omgeving; dat verschil neemt een vast padsegment niet weg.
+
+**Waarom dit eerst een vraag was en geen afleiding.** Elk segment wordt een deel van het adres waar
+iemand zijn bestand naartoe brengt. Een afgeleide of een werknaam die eenmaal in een listing staat,
+leest na een paar weken als een afspraak — hij is concreet, hij bestaat, en er staan bestanden in.
+Daarom is de keuze opgehaald vóór het aanmaken van de map, niet erna.
 
 **`all` kan geen mapnaam zijn.** Dat woord is in de parameterverwerking gereserveerd voor "alle
 waarden uit de config"; een map die zo heet is later niet los aan te spreken. Het aanmaakcommando
-weigert die naam.
+weigert die naam — en verder geen enkele, dus `default` gaat er wel door.
 
 ### De map aanmaken — wat er wel en niet is geregeld
 
 ```bash
 python scripts/bronze_stage.py --profile {profile} --source sales-targets \
-  --action prepare --env {env} --entity {entity} [--dry-run]
+  --action prepare --env default --entity sales_target [--dry-run]
 ```
 
 Het maakt **alleen** `incoming/` aan, leest het pad terug voordat het het adres afdrukt, en
@@ -132,15 +164,17 @@ verandert niets wanneer het pad al bestaat. `--env` en `--entity` zijn verplicht
 afgeleid: ze worden een segment van het adres.
 
 **Wat het uitdrukkelijk níet doet: rechten toekennen.** De map aanmaken opent hem voor niemand. Of
-er een recht nodig is, hangt aan wie het bestand straks neerzet:
+er een recht nodig is, hangt aan wie het bestand straks neerzet — en dat is op 14-09-2026
+vastgesteld: **iemand die al toegang heeft tot de werkruimte.** Daarmee valt de tweede regel weg:
 
 | Wie levert aan | Wat er nodig is |
 |---|---|
-| Iemand die al toegang heeft tot de werkruimte | niets extra's — de map aanmaken volstaat |
-| Een partij van buiten | een Entra-identiteit plus een OneLake-beveiligingsrol op de bronmap. **Handmatig beheerwerk waarvoor geen script bestaat** |
+| **Iemand die al toegang heeft tot de werkruimte** — zo is het besloten | niets extra's — de map aanmaken volstaat |
+| Een partij van buiten | *voor deze bron niet van toepassing.* Zou het er ooit een worden: een Entra-identiteit plus een OneLake-beveiligingsrol op de bronmap, en dat is **handmatig beheerwerk waarvoor geen script bestaat** |
 
 De volgorde is niet omkeerbaar: **eerst de map, dan het recht** — een recht kan alleen worden
-toegekend op een map die al bestaat.
+toegekend op een map die al bestaat. Bij deze bron is er geen recht toe te kennen, dus het aanmaken
+van de map is de hele inrichting.
 
 ### Testmateriaal neerzetten
 
@@ -168,20 +202,18 @@ uitsluitend in `incoming/`** — de twee andere mappen zijn van het framework.
 
 ## Formaat en codering
 
-Alles hieronder is gemeten op het hele bestand, niet op de eerste regels.
-
 | Eigenschap | Waarde | Hoe vastgesteld |
 |---|---|---|
-| Formaat | CSV, plat — geen geneste structuren | volledige parse |
-| Scheidingsteken | `,` (komma) | 726 komma's over 121 regels = exact 6 per regel; `csv.Sniffer` bevestigt de komma |
-| Codering | zuiver ASCII — dus ook geldig UTF-8 | 0 bytes boven 127 in het hele bestand |
-| Byte order mark | geen | eerste bytes gecontroleerd |
-| Regeleinde | CRLF (`\r\n`), op alle 121 regels, ook de laatste | byte-telling: 121 × CRLF, 0 losse LF |
-| Kopregel | ja, één, met de kolomnamen | eerste regel |
-| Aanhalingstekens | geen, nergens in het bestand | 0 voorkomens van `"` |
-| Velden per regel | 7 op **elke** regel, kopregel inbegrepen | verdeling van veldaantallen: `{7: 121}` |
-| Lege waarden | geen, in geen enkele kolom | telling per kolom |
-| Overtollige spaties | geen, in geen enkele waarde | vergelijking met de getrimde waarde |
+| Formaat | `csv`, plat — geen geneste structuren | probe |
+| Scheidingsteken | `,` (komma) | probe, via de sniffer |
+| Kopregel | ja, één | probe, via de sniffer |
+| Velden per regel | `{7: 121}` — 7 velden op **elke** regel, kopregel inbegrepen | probe |
+| Codering | `utf-8-sig`, schoon gedecodeerd | probe |
+| — byte order mark | **geen**, ondanks die codecnaam: `utf-8-sig` leest een bestand zonder BOM net zo goed | byte-inspectie |
+| — tekenbereik | zuiver ASCII: 0 bytes boven 127 in het hele bestand, dus ook geldig UTF-8 | byte-inspectie |
+| Regeleinde | CRLF (`\r\n`), op alle 121 regels, ook de laatste: 121 × CRLF, 0 losse LF | byte-inspectie |
+| Aanhalingstekens | geen, nergens in het bestand — 0 voorkomens van `"` | byte-inspectie |
+| Lege waarden | geen, in geen enkele kolom | probe |
 
 ### Hoe de lezer hiermee moet worden ingesteld
 
@@ -199,34 +231,42 @@ Spark door (`notebook_ProcessToSilver_Generic_Child.py`, regel 182-212):
 
 ## Kolomschema
 
-Zeven kolommen, in deze volgorde. Het schema wordt bij het lezen **opgelegd** (sectie 3) en op
-kopnaam gekoppeld; een kolom die in de kopregel ontbreekt levert `null` op in plaats van te
-verdwijnen.
+Zeven kolommen, in deze volgorde, overgenomen uit de probe. Het schema wordt bij het lezen
+**opgelegd** (sectie 3) en op kopnaam gekoppeld; een kolom die in de kopregel ontbreekt levert
+`null` op in plaats van te verdwijnen.
 
-| # | Kolomnaam | Waargenomen vorm | Spark-type | Nullable | Voorbeeldwaarden |
-|---|---|---|---|---|---|
-| 1 | `PeriodStart` | `yyyy-MM-dd`, altijd 10 tekens, altijd de 1e van de maand | `DateType` | Nee | `2026-01-01`, `2026-12-01` |
-| 2 | `Year` | 4 cijfers | `IntegerType` | Nee | `2026` |
-| 3 | `Month` | 1-2 cijfers, 1 t/m 12 | `IntegerType` | Nee | `1`, `12` |
-| 4 | `SalespersonId` | 1-2 cijfers, geen voorloopnullen | `IntegerType` | Nee | `2`, `20` |
-| 5 | `Salesperson` | tekst, 9-18 tekens, twee woorden (voornaam + achternaam), alleen letters en één spatie | `StringType` | Nee | REDACTED — persoonsnamen |
-| 6 | `RevenueTarget` | 6 cijfers, geen scheidingsteken, geen decimalen, geen negatieve waarden | `IntegerType` (zie risico 5) | Nee | `458000`, `707000` |
-| 7 | `OrderTarget` | 3 cijfers, geen decimalen | `IntegerType` | Nee | `160`, `250` |
+| # | Kolomnaam | dtype | Spark-type | Nullable | Verschillende waarden | Voorbeeldwaarden |
+|---|---|---|---|---|---|---|
+| 1 | `PeriodStart` | str | `StringType -> DateType` | Nee | 12 | `2026-01-01`, `2026-02-01`, `2026-03-01` |
+| 2 | `Year` | int64 | `LongType` | Nee | 1 | `2026` |
+| 3 | `Month` | int64 | `LongType` | Nee | 12 | `1`, `2`, `3`, `4`, `5` |
+| 4 | `SalespersonId` | int64 | `LongType` | Nee | 10 | `2`, `3`, `6`, `7`, `8` |
+| 5 | `Salesperson` | str | `StringType` | Nee | 10 | REDACTED — persoonsnamen |
+| 6 | `RevenueTarget` | int64 | `LongType` | Nee | 86 | `458000`, `500000`, `556000` |
+| 7 | `OrderTarget` | int64 | `LongType` | Nee | 11 | `160`, `170`, `190` |
 
 **De namen in kolom 5 zijn uit dit rapport weggelaten en niet uit de data.** Bronze houdt de
-levering zoals hij binnenkomt; dit rapport staat in twee git-repo's en blijft daar.
+levering zoals hij binnenkomt; dit rapport staat in twee git-repo's en blijft daar. De
+standaardredactie van de probe kwam hier niet in actie — zie de noot bij *Wat er is gemeten*.
 
-**Waargenomen waardenbereik** (over alle 120 regels — beschrijvend, de definitieve telling doet
-config-builder op Bronze):
+**`PeriodStart` staat er met twee typen, en dat is geen slordigheid.** Een CSV draagt geen typen,
+dus de kolom komt als tekst binnen; `DateType` is het doel. Of dat doel bij het lezen wordt
+opgelegd of pas in sectie 4 wordt bereikt, is een keuze voor de bouwstap. Wat ervoor pleit het bij
+het lezen te doen: de waarnotatie `yyyy-MM-dd` is exact de standaard `dateFormat` van de
+CSV-lezer — gedocumenteerd gedrag, niet in een run nagemeten.
 
-| Kolom | Bereik | Aantal verschillende waarden |
+**Waargenomen waardenbereik** (over alle 120 regels, uit een byte- en kolominspectie; de
+definitieve telling doet config-builder op Bronze):
+
+| Kolom | Bereik | Vorm |
 |---|---|---|
-| `PeriodStart` | `2026-01-01` t/m `2026-12-01` | 12 |
-| `Year` | 2026 | 1 |
-| `Month` | 1 t/m 12 | 12 |
-| `SalespersonId` | 2 t/m 20, niet aaneengesloten | 10 |
-| `RevenueTarget` | 440.000 t/m 707.000 | 86 |
-| `OrderTarget` | 150 t/m 250 | 11 |
+| `PeriodStart` | `2026-01-01` t/m `2026-12-01` | altijd 10 tekens, altijd de 1e van de maand |
+| `Year` | 2026 | 4 cijfers |
+| `Month` | 1 t/m 12 | 1-2 cijfers |
+| `SalespersonId` | 2 t/m 20, niet aaneengesloten | 1-2 cijfers, geen voorloopnullen |
+| `Salesperson` | — | 9-18 tekens, twee woorden (voornaam + achternaam), alleen letters en één spatie |
+| `RevenueTarget` | 440.000 t/m 707.000 | 6 cijfers, geen scheidingsteken, geen decimalen, niet negatief |
+| `OrderTarget` | 150 t/m 250 | 3 cijfers, geen decimalen |
 
 ### Drie eigenschappen die de bouwstap moet kennen
 
@@ -243,32 +283,37 @@ config-builder op Bronze):
 - **`FileName`** — het volledige pad van het bronbestand, door de verwerking toegevoegd. Dat is de
   enige herkomstinformatie die een regel draagt, en de terugvalvolgorde bij ontdubbeling.
 - **Een omgevingskolom is hier niet nodig.** `EnvironmentColumnName` leidt die af uit een segment
-  van het pad; met één vaste omgevingsaanduiding levert dat een kolom op met overal dezelfde
-  waarde. Laat hem `null`.
+  van het pad; met `default` als vaste waarde levert dat een kolom op die op elke regel `default`
+  zegt. Laat hem `null`.
 
 ## Sleutel en watermark
 
-**Sleutel: `SalespersonId` + `PeriodStart`.**
+**Sleutel: `SalespersonId` + `PeriodStart` — door de probe geverifieerd als uniek.**
 
 | Kandidaat | Dubbelen over alle 120 regels |
 |---|---|
-| `SalespersonId` + `PeriodStart` | **0** |
+| `SalespersonId` + `PeriodStart` | **0** — `unique` volgens de probe |
 | `SalespersonId` + `Year` + `Month` | **0** — gelijkwaardig, want de maandonderdelen zijn afleidbaar uit de datum |
 | `PeriodStart` alleen | 108 |
 | `SalespersonId` alleen | 110 |
 
 Dit is een telling over de volledige inhoud van het bestand, geen steekproef. Wat hij **niet**
-dekt: uniciteit over meerdere leveringen heen. Levert een volgend bestand dezelfde maanden opnieuw,
-dan staat dezelfde sleutel twee keer in Bronze en moet de ontdubbeling in sectie 5 hem opvangen.
+dekt: uniciteit over meerdere leveringen heen. Dat is met besluit 2 van 14-09-2026 geen
+mogelijkheid meer maar een zekerheid — elke levering bevat de volledige set opnieuw, dus na twee
+leveringen staat dezelfde sleutel twee keer in Bronze en moet de ontdubbeling in sectie 5 hem
+opvangen.
 
 **Watermark: geen.** Er is geen kolom die meebeweegt met een wijziging — geen `Modified`, geen
 versie, geen tijdstempel. `WatermarkType` blijft dus `null`, en dat is voor een levering de normale
 uitkomst: een bestand is verwerkt zodra het naar `processing/` is verplaatst en daarna
 gearchiveerd. Die bestandslevenscyclus ís het watermark.
 
-**Gevolg voor ontdubbeling:** komt dezelfde maand in twee leveringen voor, dan is er in de data
-niets dat zegt welke de nieuwste is. De enige ordening die overblijft is `FileName` — en dus het
-moment van landen, niet het moment van opstellen.
+**Gevolg voor ontdubbeling.** Komt dezelfde maand in twee leveringen voor, dan is er in de data
+niets dat zegt welke de nieuwste is. `FileName` neemt die rol hier niet over: de naam is bij elke
+levering dezelfde (besluit 5), dus hij onderscheidt de leveringen niet. Wat overblijft is de
+bestandslevenscyclus zelf — elke levering wordt in zijn eigen `processing/{tijdstempel}` verwerkt en
+daarna gearchiveerd, dus het moment van landen is af te lezen aan waar het bestand staat en niet aan
+hoe het heet. Het moment van opstellen blijft onbekend.
 
 ## Volume en leveringspatroon
 
@@ -277,13 +322,19 @@ moment van landen, niet het moment van opstellen.
 | Aantal bestanden gezien | 1 |
 | Omvang per bestand | 5,6 KB / 120 regels |
 | Volumeverwachting | verwaarloosbaar — ook tien jaar aan leveringen blijft onder een megabyte |
-| Bestandsnaam | `sales-targets-2026.csv`. Of `sales-targets-{jaar}.csv` het patroon is, is `UNKNOWN`: er is één bestand gezien, en één voorbeeld is geen patroon |
-| Frequentie | `UNKNOWN — needs confirmation` |
-| Delta of volledige set | `UNKNOWN — needs confirmation` |
-| Alle bestanden verwerken of alleen het laatste | `UNKNOWN — needs confirmation` |
+| Bestandsnaam | **een vaste naam zonder jaar** — gekozen 14-09-2026; elke levering vervangt de vorige. Het gemeten bestand heet nog `sales-targets-2026.csv`; welk woord de vaste naam wordt, is niet vastgelegd en is ook niet nodig — de lezer filtert op `*.csv` en niet op een naam |
+| Frequentie | **geen vast ritme** — er wordt geleverd wanneer de doelen worden bijgesteld |
+| Delta of volledige set | **de volledige set opnieuw**, bij elke levering |
+| Alle bestanden verwerken of alleen het laatste | volgt uit het bovenstaande: er staat per run precies één bestand. De levenscyclus haalt elke verwerkte levering uit `incoming/`, dus "alles verwerken" en "alleen het laatste verwerken" vallen hier samen |
 
-Het framework leest **alles** wat in `incoming/` staat. Zolang de drie vragen hierboven openstaan,
-is niet vast te stellen of dat de bedoelde uitkomst is.
+Het framework leest **alles** wat in `incoming/` staat, en met deze antwoorden is dat ook de
+bedoelde uitkomst: er staat in de regel één bestand, dat is de volledige set, en na verwerking is de
+map leeg. Twee gevolgen die niet vanzelf opvallen:
+
+- **Er is geen versheidsverwachting om op te bewaken.** Zonder vast ritme is een map die al weken
+  leeg is niet te onderscheiden van een gemiste levering. Een alarm op uitblijven valt hier dus niet
+  aan een ritme te hangen.
+- **Twee leveringen vóór één verwerking worden er één.** Zie risico 8.
 
 ## Relatie tot de verkoopdata
 
@@ -308,7 +359,7 @@ zoals die daar staat — opgenomen zodat een afwijking zichtbaar is.
 | Ontvangstmap aanmaken, met terugleescontrole | werkt — `bronze_stage.py --action prepare` |
 | Bestanden neerzetten zoals een aanleveraar | werkt, **uitsluitend op DEV** — `bronze_stage.py --action land` |
 | Een bestand ophalen uit een brievenbus elders en naar Bronze kopiëren | **bestaat niet** — geen generieke bestandskopie in de framework-pijplijnen |
-| Schrijfrecht toekennen aan een partij van buiten | **geen script** — handmatige beheerhandeling |
+| Schrijfrecht toekennen aan een partij van buiten | **geen script** — handmatige beheerhandeling. *Voor deze bron niet van toepassing: er levert geen partij van buiten aan* |
 
 ## Risico's
 
@@ -329,42 +380,63 @@ een aangeleverde bron is dat de ene default die je niet moet laten staan: de JSO
 geeft geen fout, maar een lege of nul-gevulde tabel.
 
 **4. Bedragen zijn in dit bestand gehele getallen.** Zes cijfers, geen decimaalteken, geen
-duizendtalscheiding. Een volgende levering die `458.000` of `458000,50` schrijft, past niet in een
-geheel getal en komt binnen als `null` — opnieuw zonder fout. De typekeuze voor kolom 6 is dus een
-beslissing met een gevolg, geen formaliteit.
+duizendtalscheiding, en de probe typeert de kolom als `LongType`. Een volgende levering die
+`458.000` of `458000,50` schrijft, past daar niet in en komt binnen als `null` — opnieuw zonder
+fout. De typekeuze voor kolom 6 is dus een beslissing met een gevolg, geen formaliteit.
 
 **5. Persoonsgegevens.** `Salesperson` bevat namen. Bronze houdt de levering zoals hij binnenkomt,
-dus iedereen die die map inspecteert werkt met persoonsgegevens. De inspectiescripts maskeren
-standaard; die maskering uitzetten hoort een bewuste handeling te blijven. In dit rapport zijn de
-waarden weggelaten vóór het werd weggeschreven.
+dus iedereen die die map inspecteert werkt met persoonsgegevens. **De standaardredactie van de
+inspectiegereedschappen ving deze kolom niet af** — de lijst matcht op kolomnaam en `Salesperson`
+staat er niet op. Reken er bij deze bron dus niet op; redigeer met de hand of draai met
+`--shape-only`.
 
 **6. Twee bronnen voor dezelfde maand.** `PeriodStart` enerzijds en `Year`/`Month` anderzijds zeggen
 hetzelfde. In dit bestand komen ze op elke regel overeen; in een volgend bestand kan dat uiteenlopen
 zonder dat iets dat opmerkt. Wie beide kolommen naar Silver meeneemt, neemt die mogelijkheid mee.
 
-**7. Een adres is duur om te wijzigen.** Zodra het ontvangstadres is doorgegeven aan degene die
-levert, kost elke wijziging eraan een tweede ronde langs die persoon. Komt er later een
-productieomgeving bij, dan verandert het adres en moet het opnieuw worden ingesteld.
+**7. Een adres is duur om te wijzigen.** Het adres staat nu vast en wordt doorgegeven aan degene die
+levert; elke wijziging eraan kost daarna een tweede ronde langs die persoon. Het vaste woord
+`default` is juist gekozen om die ronde bij een promotie naar productie te vermijden — het deel ná
+de wortel blijft dan gelijk. De wortel hoort bij de werkruimte en valt met een padkeuze niet vast te
+zetten, dus die ronde is verkleind en niet weggenomen.
 
-## Open vragen / UNKNOWNs
+**8. Eén vaste bestandsnaam plus geen vast ritme: een levering kan er stil één worden.** Elke
+levering heet hetzelfde, dus een tweede bestand op datzelfde adres vervangt het eerste — zo werkt
+opslag; dat is hier niet nagemeten. Normaal is dat onschadelijk, want de verwerking haalt het
+bestand uit `incoming/` en laat de map leeg achter. Maar wordt er twee keer geleverd vóórdat er is
+verwerkt — en zonder vast ritme is dat niet te voorzien — dan verdwijnt de eerste levering zonder
+foutmelding en zonder spoor in het archief. Omdat elke levering de volledige set bevat, blijft het
+verlies beperkt tot regels die alléén in de overschreven versie stonden; die zijn achteraf niet
+terug te halen.
 
-Alle vijf liggen bij de opdrachtgever, niet bij een leverancier — hij bepaalt zelf hoe hij aanlevert.
+## De vijf vragen — beantwoord op 14-09-2026
 
-1. **[onbeantwoord]** Op welk adres komt het bestand te staan? Concreet: welke waarde krijgt het
-   omgevingssegment, en hoe heet de map voor de bestandssoort? *(beide worden een segment van het
-   adres; er is er precies één van elk nodig)*
-2. **[onbeantwoord]** Wat bevat een volgende levering — de volledige set opnieuw, alleen de
-   gewijzigde maanden, of een nieuw jaar naast het vorige? *(bepaalt of een levering vervangt of
-   aanvult, en daarmee de ontdubbeling)*
-3. **[onbeantwoord]** Hoe vaak wordt er geleverd? *(bepaalt de versheidsverwachting en of alle
-   bestanden of alleen het laatste verwerkt moeten worden)*
-4. **[onbeantwoord]** Wie zet het bestand neer — iemand die al toegang heeft tot de werkruimte, of
-   een partij van buiten? *(alleen in het tweede geval is er een identiteit en een schrijfrecht
-   nodig, en dat is handmatig beheerwerk)*
-5. **[onbeantwoord]** Is `sales-targets-{jaar}.csv` de bedoelde naamgeving? *(alleen van belang
-   wanneer de extensie ooit afwijkt; `*.csv` is het standaardfilter)*
+Alle vijf lagen bij de opdrachtgever en niet bij een leverancier: hij bepaalt zelf hoe hij
+aanlevert. Op 14-09-2026 heeft hij ze alle vijf beantwoord. Hieronder staat per vraag het antwoord
+en wat eruit volgt; in de secties hierboven is elk antwoord al op zijn eigen plek verwerkt.
+
+| # | Vraag | Antwoord | Wat eruit volgt |
+|---|---|---|---|
+| 1 | Op welk adres komt het bestand te staan — welke waarde krijgt het omgevingssegment, en hoe heet de map voor de bestandssoort? | Omgevingssegment `default`, map `sales_target`. `default` is één vast woord in elke omgeving, gekozen zodat wie aanlevert bij een promotie naar productie niets aan zijn instelling hoeft te veranderen | Het adres is volledig: `{Bronze Files}/sales-targets/default/sales_target/incoming/`. De ontvangstmap kan worden aangemaakt — zie *Het ontvangstadres* |
+| 2 | Wat bevat een volgende levering — de volledige set opnieuw, alleen de gewijzigde maanden, of een nieuw jaar naast het vorige? | **De volledige set opnieuw** | Een levering vervangt, hij vult niet aan. Na twee leveringen staat dezelfde sleutel twee keer in Bronze, dus sectie 5 moet ontdubbelen — zie *Sleutel en watermark* |
+| 3 | Hoe vaak wordt er geleverd? | **Geen vast ritme** — er wordt geleverd wanneer de doelen worden bijgesteld | Er is geen versheidsverwachting om op te bewaken, en een uitblijvende levering is niet te onderscheiden van een periode zonder bijstelling — zie *Volume en leveringspatroon* en risico 8 |
+| 4 | Wie zet het bestand neer — iemand die al toegang heeft tot de werkruimte, of een partij van buiten? | **Iemand die al toegang heeft tot de werkruimte** | Geen aparte identiteit, geen OneLake-rol, geen handmatige rechtentoekenning. Het aanmaken van de ontvangstmap is de hele inrichting — zie *De map aanmaken* |
+| 5 | Is `sales-targets-{jaar}.csv` de bedoelde naamgeving? | **Nee — een vaste naam zonder jaar**; elke levering vervangt de vorige | De lezer filtert op `*.csv` en niet op een naam, dus de configuratie verandert er niet door. `FileName` onderscheidt hierdoor geen leveringen meer, en twee leveringen vóór één verwerking worden er één — zie risico 8 |
+
+**Wat hierna nog niet vaststaat, is geen van deze vijf.** Twee dingen blijven open, en ze zijn van
+een andere orde:
+
+- **Het letterlijke woord van de vaste bestandsnaam.** Dat is met opzet geen blokkade: het filter van
+  de lezer is `*.csv` en geen naam, dus niets in de configuratie hangt eraan. Alleen wanneer de
+  extensie ooit afwijkt, wordt het een keuze — zie *Hoe de lezer hiermee moet worden ingesteld*.
+- **Er is nog geen echte levering.** Risico 2 blijft daarmee onverminderd staan: alles over formaat,
+  kolommen en sleutel is op het repetitiebestand gemeten, en de vijf antwoorden hierboven zijn
+  afspraken en geen metingen.
 
 ---
 
-*Bronresearch uitgevoerd 14-09-2026. Het bestand is volledig gelezen; het formaat, het
-kolomschema en de sleutel zijn gemeten. Het ontvangstadres en het leveringspatroon zijn dat niet.*
+*Bronresearch uitgevoerd 14-09-2026 en diezelfde dag bijgewerkt met de antwoorden van de
+opdrachtgever op de vijf openstaande vragen. Het bestand is volledig gelezen; het formaat, het
+kolomschema en de sleutel zijn gemeten. Het ontvangstadres, de omvang van een levering, het ritme,
+wie aanlevert en de naamgeving zijn vastgesteld — vastgesteld, niet gemeten, want er is nog geen
+levering.*
