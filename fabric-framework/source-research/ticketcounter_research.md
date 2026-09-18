@@ -2,7 +2,7 @@
 
 researched_at: 2026-07-17
 checked_at: 2026-09-18
-checked_by: research agent (gerichte hermeting van de drie Discount-endpoints, samengevoegd met het bestaande rapport)
+checked_by: research agent (gerichte hermeting van de drie Discount-endpoints, daarna verbreed naar 509 kortingscodes op `Discount/{discountCode}`, samengevoegd met het bestaande rapport)
 source_type: api
 overall_verdict: REVIEW — v2 is bruikbaar; de Discount-endpoints zijn sinds 18-09-2026 toegankelijk maar leveren geen opsombare kortingsbron
 
@@ -115,6 +115,7 @@ niet opnieuw gemeten.
 |---|---|---|
 | 5 | De drie `Discount`-endpoints geven HTTP 403 | **Ze geven geen 403 meer.** Beide omgevingssleutels komen erdoor; zie [Toegang per rol](#toegang-per-rol--de-discount-endpoints-zijn-sinds-18-09-2026-open) |
 | 6 | De kortingsdimensie is via deze API niet bereikbaar, omdat de toegang ontbreekt | De conclusie blijft, maar de **grond** is een andere. Toegang is er nu wel; wat ontbreekt is een endpoint dat kortingscodes *opsomt*, en een beschrijvend veld in wat er wel uitkomt. Zie [Kortingsendpoints](#kortingsendpoints--gemeten-18-09-2026) |
+| 7 | De succesvorm van `Discount/{discountCode}` blijft onwaarneembaar **omdat een code in de feiten per definitie al is gebruikt** | Die verklaring dekt de meerderheid, maar niet alles. Over 509 codes in plaats van zes blijkt een **derde** foutvorm te bestaan, en die treft juist de codes waarvoor de uitputtingsverklaring níét opgaat: de meermaals bruikbare campagnecodes antwoorden **HTTP 500**. Zie [`GET /api/v2/Discount/{discountCode}`](#get-apiv2discountdiscountcode--een-controle-aan-de-kassa-geen-opzoekbron) |
 
 **Wat onveranderd blijft is de praktische uitkomst voor de feiten:** `discountName` in
 `sold-tickets` is nog steeds de enige beschrijvende kortingsinformatie die je over een verkocht
@@ -372,29 +373,97 @@ zaken, en niet te onderscheiden van een code die je verkeerd hebt meegestuurd.
 
 ### `GET /api/v2/Discount/{discountCode}` — een controle aan de kassa, geen opzoekbron
 
-Dit endpoint is toegankelijk, maar heeft in **geen enkele** aanroep een 200 gegeven. Zes codes uit
-de verkochte tickets van twee omgevingen leverden alle zes:
+Dit endpoint is toegankelijk, maar heeft in **geen enkele** aanroep een HTTP 200 gegeven. Die
+uitspraak stond eerder op zes codes; op 18-09-2026 is hij verbreed naar **509 codes** over twee
+omgevingen, en hij houdt stand.
 
-```json
-{"succeeded": false,
- "errorMessage": "ErrorCode: 52 - Invalid DiscountCode supplied - Maximum number of orders exceeded for discount code",
- "isRedirect": false, "redirectUrl": null, "displayError": true, "errorCode": "InvalidDiscountCode"}
-```
+#### Waarom het geen 176.722 codes zijn, en wat er in plaats daarvan is gemeten
 
-Een code die niet bestaat geeft dezelfde HTTP 400 met een andere staart
-(`- GetDiscountInformationV2`), dus het endpoint onderscheidt de twee gevallen wél.
+De kortingscodes zijn niet opnieuw bij de bron verzameld maar gelezen uit de al gelande feiten: de
+kortingscodekolom op de verkochte tickets draagt **176.722 distincte codes** over twee omgevingen
+(daarnaast dragen de meeste rijen helemaal geen code). Dat is de volledige populatie waar deze vraag
+over gaat.
 
-**De uitleg, en die maakt het endpoint ongeschikt als bron:** dit is de controle die de
-verkoopstraat doet vóór een bestelling — mag deze code nu gebruikt worden. Een code die in
-`sold-tickets` staat, is per definitie al gebruikt; is hij eenmalig, dan is hij daarmee uitgeput en
-antwoordt dit endpoint niet meer over hem. **Precies de codes die je in een historisch feit
-tegenkomt, zijn de codes waar dit endpoint niets meer over zegt.**
+**Die populatie is niet uitputtend te bevragen, en de reden zit in het endpoint zelf.** De code
+staat in het **pad** van een `GET`, niet in een body. Er is dus geen bulkvorm en geen pagineerlus:
+één code is één HTTP-aanroep. Het gemeten tempo was ongeveer vier seconden per aanroep, dus de
+volledige set zou ruim een week aaneengesloten draaien — dat is geen meting meer maar een belasting
+van de bron.
 
-- **De succesvorm is dus UNKNOWN — niet waargenomen.** Volgens het contract zit de inhoud onder
-  `discount` naast hetzelfde omhulsel, met `name`, `description`, `remainingTickets`, `version`,
-  twee operator/bedrag-paren, en een **vijf lagen diep geneste** boom
+Wat er wél is gedaan is **gestratificeerd bemonsteren op de twee assen die de kans op een succesvorm
+maximaliseren**. De vraag is namelijk niet "hoe vaak faalt dit" maar "bestaat er één code die
+slaagt", en dan is een aselecte steekproef de zwakste keuze:
+
+| Steekproef | Waarom juist deze | Codes | HTTP 200 |
+|---|---|---:|---:|
+| Meest gebruikte codes van de laatste tien verkoopdagen | recent én meermaals bruikbaar — de beste kandidaat | 80 | 0 |
+| Spreiding over álle codes van de laatste tien verkoopdagen | vangt ook de eenmalige codes van net | 116 | 0 |
+| Meest gebruikte codes van de laatste zes weken | campagnes die nu lopen | 46 | 0 |
+| Spreiding over álle codes van de laatste zes weken | breder recentheidsvenster | 98 | 0 |
+| Meest gebruikte codes over de hele historie | de codes met de hoogste bestellimiet | 51 | 0 |
+| Gelijkmatige spreiding over de volledige lijst | controle tegen een vertekende selectie | 118 | 0 |
+| **Totaal** | | **509** | **0** |
+
+Beide omgevingen zijn vrijwel gelijk vertegenwoordigd (254 en 255 codes) en gedragen zich hetzelfde.
+
+> **Dit is een deelmeting, en ze draagt zichtbaar hoe deel ze is.** 509 van 176.722 is 0,3% van de
+> populatie. De steekproef is bewust niet aselect maar naar de succeskans toe gestuurd, dus een nul
+> weegt hier zwaarder dan een aselecte nul van dezelfde omvang — maar hij bewijst niet dat er geen
+> enkele code met een 200 bestaat. De juiste lezing: **UNKNOWN blijft UNKNOWN, nu over 509 codes in
+> plaats van zes, en met een verklaring die is veranderd.**
+
+#### Vier foutvormen, en de derde is nieuw
+
+| Wat er terugkomt | Aantal | Waar hij optreedt |
+|---|---:|---|
+| HTTP 400 — `Maximum number of orders exceeded for discount code` | 397 | de automatisch gegenereerde, persoonsgebonden codes |
+| HTTP 400 — `Discount code is not valid (code is valid from D until D)` | 102 | codes waarvan het geldigheidsvenster dicht is |
+| **HTTP 500 — `Nullable object must have a value.`** | **10** | **uitsluitend** met de hand benoemde campagnecodes |
+| HTTP 400 — `- GetDiscountInformationV2` | apart gemeten | een onbekende code, en een code uit de ándere omgeving |
+| **HTTP 200** | **0** | — |
+
+**De geldigheidsvorm lekt de datums.** De foutmelding noemt het venster zelf
+(`code is valid from 01-03-2025 until 03-06-2025`), dus zelfs de mislukte aanroep geeft hier
+`validFrom` en `validTo` prijs. Van alle 102 waargenomen vensters lag het einde vóór de meetdatum —
+er zat geen enkele nog-lopende code tussen.
+
+**De vierde vorm maakt twee gevallen ononderscheidbaar.** Een verzonnen code en een bestaande code
+uit de andere omgeving geven **exact dezelfde** melding. Dat bevestigt dat codes omgevingsgebonden
+zijn, en het betekent tegelijk dat je aan het antwoord niet kunt zien of een code niet bestaat dan
+wel bij de verkeerde sleutel is opgevraagd.
+
+#### De HTTP 500 verlegt de verklaring — *voorgesteld, niet bevestigd*
+
+De vorige versie van dit rapport verklaarde het uitblijven van een 200 volledig uit uitputting: een
+code die in de feiten staat is al gebruikt, en is hij eenmalig, dan is hij daarmee op. **Die
+verklaring dekt de 397 gegenereerde codes, maar juist niet de codes waarvoor ze niet opgaat.**
+
+De tien HTTP 500'en vallen namelijk niet willekeurig. Het zijn zonder uitzondering de **benoemde,
+meermaals bruikbare campagnecodes** — het soort code dat tientallen tot honderden keren in de feiten
+voorkomt en dus per definitie *niet* na één bestelling uitgeput is. Waar de uitputtingsverklaring
+ophoudt, begint een serverfout.
+
+**De voor de hand liggende lezing is dat deze aanroepen verder in de afhandeling komen dan de
+andere en daar stuklopen op een waarde die niet is ingevuld** — dat wil zeggen: op precies het pad
+dat anders de succesvorm zou opleveren. Dat is een **hypothese op een correlatie van tien
+waarnemingen** en geen vastgesteld feit; alleen de leverancier kan hem bevestigen. Zie
+[Vragen aan de leverancier](#vragen-aan-de-leverancier).
+
+**Wat het hoe dan ook betekent:** de succesvorm is niet waarneembaar, en de reden is niet langer
+alléén "de codes die wij hebben zijn op". Bij de meest kansrijke categorie antwoordt het endpoint
+met een serverfout, en dat is een gebrek aan de bronkant — geen eigenschap van onze data.
+
+#### Wat er over de succesvorm vaststaat
+
+- **De succesvorm is UNKNOWN — niet waargenomen, over 509 codes.** Volgens het contract zit de
+  inhoud onder `discount` naast hetzelfde omhulsel, met `name`, `description`, `remainingTickets`,
+  `version`, twee operator/bedrag-paren, en een **vijf lagen diep geneste** boom
   `discountPartners` → `discountEvents` → `discountPerformances` → `discountPerformanceSections`
   → `discountPriceTypes` → `discountPrices`.
+- **`remainingTickets` is nooit met een waarde gezien.** Het staat in het contract; er is geen
+  enkele respons waarin het voorkomt. Wat het telt, of het per partner of per voorstelling geldt en
+  of het bij een verlopen code nog betekenis heeft, is **UNKNOWN — needs confirmation**. Bouw er
+  geen kengetal op voordat er één echte 200 is waargenomen.
 - **Het is een enkelvoudig record per aanroep**, geen verzameling: geen paginering, geen
   wijzigingsveld, en één HTTP-aanroep per kortingscode.
 
@@ -415,6 +484,9 @@ Daaruit volgen drie dingen:
 3. **`discountName` uit `sold-tickets` blijft de enige beschrijvende kortingsinformatie.** De
    eerdere conclusie staat, maar op een andere grond dan in de vorige versie — niet omdat de deur
    dicht zit, maar omdat er achter de open deur geen naam ligt.
+4. **De detailaanroep is ook op schaal geen bron.** Over 509 codes uit de feiten kwam er geen enkele
+   succesvolle respons uit, en bij de meest kansrijke categorie antwoordt hij met een serverfout.
+   Reken hem dus niet in als verrijkingsroute zolang die fout er is.
 
 **De ophaalvorm die `codes-basic-info` zou vragen, kan het platform vandaag niet** — zie
 [Benodigde uitbreidingen aan general-notebooks](#benodigde-uitbreidingen-aan-general-notebooks).
@@ -1110,6 +1182,12 @@ Silver-transformatie, niet de ingestie, en hoort dus bij config-builder.
      antwoordt `succeeded: true` met een lege lijst op beide omgevingen.
    - **Maximale omvang van één `codes-basic-info`-vraag — UNKNOWN.** 2069 codes in één
      aanroep werkten; een bovengrens is niet gevonden.
+   - **De succesvorm van `Discount/{discountCode}` — UNKNOWN, nu over 509 codes.** Geen enkele
+     aanroep gaf HTTP 200; `remainingTickets` is nooit met een waarde waargenomen. De tien
+     campagnecodes in die set gaven HTTP 500 in plaats van een antwoord.
+   - **Bestaat er een kortingscode waarvoor dit endpoint wél 200 geeft? — UNKNOWN.** De volledige
+     populatie telt 176.722 codes en is niet uitputtend te bevragen: de code zit in het pad, dus
+     één code is één aanroep. De 509 gemeten codes zijn gericht gekozen op de hoogste succeskans.
 8. **`payments` op `baskets` — vorm ongeverifieerd.** Het staat in het contract maar kwam in 1588
    records niet voor; met `null`-weglating betekent dat "niet gevuld in deze steekproef", niet
    "bestaat niet". De geneste vorm ervan is dus niet waargenomen.
@@ -1149,6 +1227,13 @@ Silver-transformatie, niet de ingestie, en hoort dus bij config-builder.
 11. **Naam van de korting.** `codes-basic-info` geeft geen naam en geen omschrijving, en de
    detailaanroep antwoordt niet meer over een uitgeputte code. Is de naam achter `discountName` in
    `sold-tickets` elders op te vragen voor codes die al zijn gebruikt?
+12. **HTTP 500 op `Discount/{discountCode}`.** Tien meermaals bruikbare campagnecodes gaven
+   `{"succeeded": false, "errorMessage": "Nullable object must have a value."}` met status 500 —
+   geen van hen was uitgeput en geen van hen viel buiten zijn geldigheidsvenster. Is dat een fout
+   in de afhandeling, en onder welke voorwaarde geeft dit endpoint wél een `discount`-object terug?
+13. **Een code die wél slaagt.** Kan de leverancier één kortingscode aanwijzen waarvoor
+   `GET /api/v2/Discount/{discountCode}` op onze sleutels HTTP 200 geeft? Zonder één waargenomen
+   succesvorm blijft de inhoud van `discount` — en daarmee `remainingTickets` — ongeverifieerd.
 
 ## Verzamel-endpoints v2 — dimensie- en referentiebronnen
 
