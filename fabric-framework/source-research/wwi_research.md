@@ -53,16 +53,20 @@ gebruikerstabel van het bronsysteem, niet alleen een dimensie.
 - **Mirrorbaar door Fabric?** Ja — dit is een Azure SQL Database, en dat is een van de brontypen
   die Fabric kan mirroren (Azure SQL / SQL Server / PostgreSQL / MySQL / Cosmos DB / Snowflake /
   BigQuery / Oracle).
-- **Observatie:** de meting wijst twee kanten op. Vóór mirroring pleit de historie: 16 van de 48
-  tabellen zijn archieftabellen die de bron zelf bijhoudt (het `_Archive`-patroon met
-  `ValidFrom`/`ValidTo`), dus die historie bestaat al aan de bronkant en hoeft in de laadlaag niet
-  te worden nagebouwd. Vóór de kopieerroute met Bronze en Silver pleit de veldselectie: er staan
-  nog open vragen over persoonsgegevens, bankgegevens en `geography`-kolommen (zie *Open Questions
-  / UNKNOWNs*, punten 5, 6 en 8), en die vragen om transformatie of uitsluiting van kolommen —
-  werk dat in een transformatiestap thuishoort en niet in een één-op-één-kopie van de bron.
+- **Besluit (18-09-2026): de kopieerroute met Bronze en Silver, niet mirroring.** De keuze is met
+  de opdrachtgever gemaakt; deze sectie legt hem vast.
+- **Waarom.** De kolommen die de afweging openhielden gaan mee — `HashedPassword` in
+  `Application.People` en de vijf bankkolommen in `Purchasing.Suppliers` — terwijl de elf
+  `geography`-kolommen juist wegblijven (zie *Open Questions / UNKNOWNs*, punten 5, 6 en 8). Dat
+  is veldselectie, en die vraagt om een gewone ingestie met een transformatiestap; een mirror
+  kopieert de bron ongefilterd. Daar komt bij dat de kopieerroute sleutelcontrole en
+  SCD-afhandeling geeft, die een mirror niet kent.
+- **Wat met dit besluit niet vervalt:** 16 van de 48 tabellen zijn archieftabellen die de bron
+  zelf bijhoudt (het `_Archive`-patroon met `ValidFrom`/`ValidTo`). Die historie bestaat al aan de
+  bronkant en hoeft in Silver niet opnieuw te worden opgebouwd. Het was het argument vóór
+  mirroring en blijft na dit besluit een eigenschap waar de inrichting rekening mee houdt.
 - Zie `data-agents/skills/data-ingestion/config-mirror/SKILL.md` voor de afweging en de werkwijze.
-  **Deze sectie beslist niets:** ze zet de waarnemingen naast elkaar; de keuze tussen mirroring en
-  de kopieerroute maakt config-builder samen met de klant.
+  De vertaling van dit besluit naar de config doet config-builder.
 
 ## Connection
 
@@ -133,8 +137,8 @@ statistics, not from a `COUNT(*)`. 48 tables and 3 views.
 | Sales | OrderLines | TABLE | 235.737 | yes | 85,94 MB — the largest table by row count outside telemetry; PK `OrderLineID` |
 | Sales | Orders | TABLE | 74.968 | yes | 19,38 MB; PK `OrderID`; self-reference `BackorderOrderID` |
 | Sales | SpecialDeals | TABLE | 2 | yes | PK `SpecialDealID`; two CHECK constraints govern which discount field is filled |
-| Warehouse | ColdRoomTemperatures | TABLE | 3 | ⚠ decision | sensor telemetry; identity PK; only 3 current rows against 4 million in its history table |
-| Warehouse | ColdRoomTemperatures_Archive | TABLE | 4.076.195 | ⚠ decision | 294,66 MB — by far the largest object in the database; history of `ColdRoomTemperatures` |
+| Warehouse | ColdRoomTemperatures | TABLE | 3 | yes | sensor telemetry; identity PK; only 3 current rows against 4 million in its history table; in scope per decision 2026-09-18 |
+| Warehouse | ColdRoomTemperatures_Archive | TABLE | 4.076.195 | yes | 294,66 MB — by far the largest object in the database; history of `ColdRoomTemperatures`; in scope per decision 2026-09-18 |
 | Warehouse | Colors | TABLE | 36 | yes | PK `ColorID`; UNIQUE on `ColorName` |
 | Warehouse | Colors_Archive | TABLE | 1 | yes | no PK; history of `Colors` |
 | Warehouse | PackageTypes | TABLE | 14 | yes | PK `PackageTypeID`; UNIQUE on name |
@@ -146,7 +150,7 @@ statistics, not from a `COUNT(*)`. 48 tables and 3 views.
 | Warehouse | StockItems_Archive | TABLE | 444 | yes | no PK; history of `StockItems` |
 | Warehouse | StockItemStockGroups | TABLE | 442 | yes | link table; two UNIQUE constraints over the same pair of columns |
 | Warehouse | StockItemTransactions | TABLE | 240.986 | yes | 65,66 MB; PK `StockItemTransactionID`; the stock movement ledger |
-| Warehouse | VehicleTemperatures | TABLE | 74.710 | ⚠ decision | 34,50 MB; sensor telemetry; identity PK; no history table |
+| Warehouse | VehicleTemperatures | TABLE | 74.710 | yes | 34,50 MB; sensor telemetry; identity PK; no history table; in scope per decision 2026-09-18 |
 | Website | Customers | VIEW | 664 | no | presentation layer over `Sales.Customers` plus lookups |
 | Website | Suppliers | VIEW | 13 | no | presentation layer over `Purchasing.Suppliers` plus lookups |
 | Website | VehicleTemperatures | VIEW | 74.710 | no | presentation layer over `Warehouse.VehicleTemperatures` |
@@ -1711,24 +1715,28 @@ tegenovergestelde: een echte mutatie die wél optelbaar is.
 3. **Hoe vaak verandert de bron, en hoe snel groeit hij?** Eén meting geeft geen groei. Hoe vaak
    er opgehaald moet worden is daarmee `UNKNOWN` en een afspraak met de klant, geen eigenschap
    van de database.
-4. **Moet de temperatuurtelemetrie mee?** `Warehouse.ColdRoomTemperatures_Archive` (4 miljoen
-   rijen, 295 MB) en `Warehouse.VehicleTemperatures` (74.710 rijen) zijn sensordata met een heel
-   ander karakter en volume dan de rest. Ze meenemen vervijfvoudigt het volume van de bron.
-   Dit is een vraag aan de klant.
-5. **Mogen de persoonsgegevens in `Application.People` mee, en zo ja welke?** De tabel bevat
-   naam, e-mailadres, telefoonnummer en `HashedPassword`. Dat laatste is inloggegevens en hoort
-   niet in een datawarehouse thuis; wij stellen voor die kolom niet op te halen. Voor de overige
-   persoonsgegevens is een keuze nodig.
-6. **Mogen de bankgegevens in `Purchasing.Suppliers` mee?** Vijf kolommen
-   (`BankAccountName`, `BankAccountBranch`, `BankAccountCode`, `BankAccountNumber`,
-   `BankInternationalCode`) bevatten betaalgegevens van leveranciers. Ze staan ook in
-   `Suppliers_Archive`.
+4. **Moet de temperatuurtelemetrie mee? — Beantwoord 18-09-2026: ja.**
+   `Warehouse.ColdRoomTemperatures_Archive` (4 miljoen rijen, 295 MB) en
+   `Warehouse.VehicleTemperatures` (74.710 rijen) vallen binnen de ophaalscope. Het blijft
+   sensordata met een ander karakter en volume dan de rest: het volume van deze bron wordt
+   daarmee ongeveer vijf keer zo groot, en dat is hier een bewuste keuze.
+5. **Mogen de persoonsgegevens in `Application.People` mee? — Beantwoord 18-09-2026: ja,
+   volledig, inclusief `HashedPassword`.** Naam, e-mailadres, telefoonnummer én `HashedPassword`
+   gaan mee. Dit vervangt het eerdere voorstel in dit rapport om die ene kolom niet op te halen.
+   Blijft staan als eigenschap van de levering: `HashedPassword` bevat inloggegevens, dus de
+   landingslaag draagt vanaf de eerste run authenticatiemateriaal en de toegang daartoe hoort
+   navenant te zijn ingericht.
+6. **Mogen de bankgegevens in `Purchasing.Suppliers` mee? — Beantwoord 18-09-2026: ja.** De vijf
+   kolommen (`BankAccountName`, `BankAccountBranch`, `BankAccountCode`, `BankAccountNumber`,
+   `BankInternationalCode`) gaan mee, inclusief hun tegenhangers in `Suppliers_Archive` — die
+   tabel draagt dezelfde kolommen, dus de historie van de betaalgegevens komt mee.
 7. **Wat betekent `OutstandingBalance` als hij overal `0.00` is?** In beide transactietabellen
    staat de kolom in de hele steekproef op nul. Of dat betekent dat alles is afgeletterd, of dat
    de kolom niet wordt gebruikt, is `UNKNOWN`.
-8. **Zijn de elf `geography`-kolommen nodig?** Ze bevatten locaties en landsgrenzen, worden door
-   de meting niet bemonsterd, en vragen bij het ophalen om een conversie. Als er geen
-   kaartvraagstuk ligt, is ze weglaten de eenvoudigste keuze.
+8. **Zijn de elf `geography`-kolommen nodig? — Beantwoord 18-09-2026: nee, ze blijven weg.** Ze
+   worden niet opgehaald, en daarmee vervalt ook de conversie die ze bij het ophalen zouden
+   vragen. Ze staan onder *Columns per Table* en *Column Shape* nog wel vermeld als kolom van de
+   bron, met `not sampled` — dat de bron ze heeft blijft een feit over de bron.
 9. **Wat is het gewenste gedrag bij een gepauzeerde database?** De bron slaapt na 60 minuten in.
    Of het ophaalproces mag wachten op het opstarten, of dat de run dan opnieuw moet worden
    ingepland, is een keuze.
