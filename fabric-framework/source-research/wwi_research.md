@@ -48,6 +48,22 @@ Daarnaast staat er in vrijwel elke tabel een `LastEditedBy` die naar `Applicatio
 verwijst. Dat verklaart waarom die ene tabel 41 inkomende foreign keys heeft: het is de
 gebruikerstabel van het bronsysteem, niet alleen een dimensie.
 
+## Ingestion Route Consideration
+
+- **Mirrorbaar door Fabric?** Ja — dit is een Azure SQL Database, en dat is een van de brontypen
+  die Fabric kan mirroren (Azure SQL / SQL Server / PostgreSQL / MySQL / Cosmos DB / Snowflake /
+  BigQuery / Oracle).
+- **Observatie:** de meting wijst twee kanten op. Vóór mirroring pleit de historie: 16 van de 48
+  tabellen zijn archieftabellen die de bron zelf bijhoudt (het `_Archive`-patroon met
+  `ValidFrom`/`ValidTo`), dus die historie bestaat al aan de bronkant en hoeft in de laadlaag niet
+  te worden nagebouwd. Vóór de kopieerroute met Bronze en Silver pleit de veldselectie: er staan
+  nog open vragen over persoonsgegevens, bankgegevens en `geography`-kolommen (zie *Open Questions
+  / UNKNOWNs*, punten 5, 6 en 8), en die vragen om transformatie of uitsluiting van kolommen —
+  werk dat in een transformatiestap thuishoort en niet in een één-op-één-kopie van de bron.
+- Zie `data-agents/skills/data-ingestion/config-mirror/SKILL.md` voor de afweging en de werkwijze.
+  **Deze sectie beslist niets:** ze zet de waarnemingen naast elkaar; de keuze tussen mirroring en
+  de kopieerroute maakt config-builder samen met de klant.
+
 ## Connection
 
 | | |
