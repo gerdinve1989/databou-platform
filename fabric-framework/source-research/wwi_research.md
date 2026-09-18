@@ -55,12 +55,12 @@ gebruikerstabel van het bronsysteem, niet alleen een dimensie.
   BigQuery / Oracle).
 - **Besluit (18-09-2026): de kopieerroute met Bronze en Silver, niet mirroring.** De keuze is met
   de opdrachtgever gemaakt; deze sectie legt hem vast.
-- **Waarom.** De kolommen die de afweging openhielden gaan mee — `HashedPassword` in
-  `Application.People` en de vijf bankkolommen in `Purchasing.Suppliers` — terwijl de elf
+- **Waarom.** De scope is per kolom bepaald: de vijf bankkolommen in `Purchasing.Suppliers` gaan
+  mee, terwijl `HashedPassword` in `Application.People` en `Application.People_Archive` en de elf
   `geography`-kolommen juist wegblijven (zie *Open Questions / UNKNOWNs*, punten 5, 6 en 8). Dat
   is veldselectie, en die vraagt om een gewone ingestie met een transformatiestap; een mirror
-  kopieert de bron ongefilterd. Daar komt bij dat de kopieerroute sleutelcontrole en
-  SCD-afhandeling geeft, die een mirror niet kent.
+  kopieert de bron ongefilterd en kan een kolom dus niet buiten de deur houden. Daar komt bij dat
+  de kopieerroute sleutelcontrole en SCD-afhandeling geeft, die een mirror niet kent.
 - **Wat met dit besluit niet vervalt:** 16 van de 48 tabellen zijn archieftabellen die de bron
   zelf bijhoudt (het `_Archive`-patroon met `ValidFrom`/`ValidTo`). Die historie bestaat al aan de
   bronkant en hoeft in Silver niet opnieuw te worden opgebouwd. Het was het argument vóór
@@ -1720,12 +1720,12 @@ tegenovergestelde: een echte mutatie die wél optelbaar is.
    `Warehouse.VehicleTemperatures` (74.710 rijen) vallen binnen de ophaalscope. Het blijft
    sensordata met een ander karakter en volume dan de rest: het volume van deze bron wordt
    daarmee ongeveer vijf keer zo groot, en dat is hier een bewuste keuze.
-5. **Mogen de persoonsgegevens in `Application.People` mee? — Beantwoord 18-09-2026: ja,
-   volledig, inclusief `HashedPassword`.** Naam, e-mailadres, telefoonnummer én `HashedPassword`
-   gaan mee. Dit vervangt het eerdere voorstel in dit rapport om die ene kolom niet op te halen.
-   Blijft staan als eigenschap van de levering: `HashedPassword` bevat inloggegevens, dus de
-   landingslaag draagt vanaf de eerste run authenticatiemateriaal en de toegang daartoe hoort
-   navenant te zijn ingericht.
+5. **Mogen de persoonsgegevens in `Application.People` mee? — Beantwoord 18-09-2026: ja, maar
+   `HashedPassword` wordt uitgesloten.** Naam, e-mailadres en telefoonnummer gaan mee;
+   `HashedPassword` niet. Reden: dat is authenticatiemateriaal, en dat hoort niet in de
+   landingslaag thuis — voor geen enkele vraag die dit datawarehouse moet beantwoorden is die
+   kolom nodig. De uitsluiting geldt ook voor `Application.People_Archive`, dat dezelfde kolom
+   draagt; dit volgt de aanbeveling die onder *Columns per Table* bij die kolom staat.
 6. **Mogen de bankgegevens in `Purchasing.Suppliers` mee? — Beantwoord 18-09-2026: ja.** De vijf
    kolommen (`BankAccountName`, `BankAccountBranch`, `BankAccountCode`, `BankAccountNumber`,
    `BankInternationalCode`) gaan mee, inclusief hun tegenhangers in `Suppliers_Archive` — die
