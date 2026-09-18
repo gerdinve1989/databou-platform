@@ -1,10 +1,10 @@
 # Ticketcounter API-onderzoek
 
 researched_at: 2026-07-17
-checked_at: 2026-09-04
-checked_by: research agent (live meetronde op v2, samengevoegd met het bestaande rapport)
+checked_at: 2026-09-18
+checked_by: research agent (gerichte hermeting van de drie Discount-endpoints, samengevoegd met het bestaande rapport)
 source_type: api
-overall_verdict: REVIEW — v2 is live gemeten en bruikbaar; de eerder gemelde blokkades bestaan niet meer
+overall_verdict: REVIEW — v2 is bruikbaar; de Discount-endpoints zijn sinds 18-09-2026 toegankelijk maar leveren geen opsombare kortingsbron
 
 Onderzoek naar **TC.Tickets.API**. Er draaien twee generaties naast elkaar: een **legacy v1**
 `Statistics`-API op `api.ticketcounter.net`, waarop bestaande connectoren produceren, en de
@@ -33,7 +33,8 @@ een migratie v1 → v2 moet afdekken.
 | [Overzicht](#overzicht) | Wat v1 en v2 zijn en hoe ze zijn onderzocht |
 | [Twee hostfamilies](#twee-hostfamilies--net-en-eu-dragen-hetzelfde-contract) | `.net` en `.eu` dragen hetzelfde contract, maar niet dezelfde klanten |
 | [Authenticatie](#authenticatie) | De `api_key`-grant, de valstrik die uren kost, de secretnamen |
-| [Toegang per rol](#toegang-per-rol--buiten-statistics-is-het-403) | Wat een Statistics-sleutel wel en niet mag |
+| [Toegang per rol](#toegang-per-rol--de-discount-endpoints-zijn-sinds-18-09-2026-open) | Wat een Statistics-sleutel wel en niet mag, en wat daar op 18-09-2026 bij kwam |
+| [Kortingsendpoints](#kortingsendpoints--gemeten-18-09-2026) | De drie Discount-endpoints: vorm, strategie en wat je eraan hebt |
 | [Verbinding](#verbinding) | BaseUrl, RateLimitDelay, ApiHeaders |
 | [Rate limits](#rate-limits) | Gemeten voor beide generaties |
 | [Entiteitenoverzicht](#entiteitenoverzicht) | Endpoints binnen en buiten scope |
@@ -87,7 +88,7 @@ vier een dag werk kan kosten aan wie ze opnieuw moet ontdekken.
 | 1 | v2 weigert onze inloggegevens (`invalid_client`) | Er werd `client_credentials` gestuurd. v2 wil `grant_type=api_key` met een aparte API-sleutel en de **letterlijke** client-id `apikeygrant`. Daarmee: HTTP 200 |
 | 2 | v2 leeft op `apiv2.ticketcounter.eu` | Het is één contract op **twee hostfamilies**, en een sleutel werkt maar op één ervan. Zie [Twee hostfamilies](#twee-hostfamilies--net-en-eu-dragen-hetzelfde-contract) |
 | 3 | `sold-tickets` heeft 72 velden | Het **contract** telt er 72; een **respons** levert er minder omdat de bron elk veld met de waarde `null` weglaat. Dat is geen hostverschil en geen contractverschil — de twee swaggers zijn byte-voor-byte identiek op de `tokenUrl` na |
-| 4 | `GET /api/v2/DiscountReasons` bestaat | Dat pad staat niet meer in het contract. Het heet nu `GET /api/v2/Discount/reasons` — en geeft HTTP 403 |
+| 4 | `GET /api/v2/DiscountReasons` bestaat | Dat pad staat niet meer in het contract. Het heet nu `GET /api/v2/Discount/reasons` |
 
 **En de valstrik die de meeste tijd kost, want hij faalt stil.** Er bestaan twee token-endpoints
 die allebei HTTP 200 geven op exact dezelfde `api_key`-aanvraag:
@@ -103,6 +104,22 @@ Het tweede token is het formaat van de **oude** API. Elk v2-endpoint antwoordt e
 een lege foutbody** — geen `WWW-Authenticate`, geen JSON, geen aanwijzing. Wie de host overneemt
 uit de v1-configuratie en alleen het pad aanpast, krijgt dus een geslaagde tokenaanvraag en daarna
 een onverklaarbare 401. Alleen `/connect/token` op de `apiv2`-host levert een bruikbaar token.
+
+### Wat de ronde van 18-09-2026 corrigeert
+
+Deze ronde was smal: de drie `Discount`-endpoints zijn opnieuw aangeroepen nadat de rechten op de
+API-sleutels waren aangepast. Al het overige in dit rapport stamt uit 04-09-2026 en is deze ronde
+niet opnieuw gemeten.
+
+| # | Stond er | Klopt niet meer, want |
+|---|---|---|
+| 5 | De drie `Discount`-endpoints geven HTTP 403 | **Ze geven geen 403 meer.** Beide omgevingssleutels komen erdoor; zie [Toegang per rol](#toegang-per-rol--de-discount-endpoints-zijn-sinds-18-09-2026-open) |
+| 6 | De kortingsdimensie is via deze API niet bereikbaar, omdat de toegang ontbreekt | De conclusie blijft, maar de **grond** is een andere. Toegang is er nu wel; wat ontbreekt is een endpoint dat kortingscodes *opsomt*, en een beschrijvend veld in wat er wel uitkomt. Zie [Kortingsendpoints](#kortingsendpoints--gemeten-18-09-2026) |
+
+**Wat onveranderd blijft is de praktische uitkomst voor de feiten:** `discountName` in
+`sold-tickets` is nog steeds de enige beschrijvende kortingsinformatie die je over een verkocht
+ticket kunt landen. Dat was eerder waar omdat de deur dicht zat; het is nu waar omdat er achter de
+open deur geen naam ligt.
 
 ## Twee kopieën van dit rapport
 
@@ -236,18 +253,24 @@ dezelfde host en hetzelfde token-endpoint; alleen de sleutel verschilt.
 - **Security geldt globaal:** de spec declareert op topniveau `security: [{oauth2: [], bearer: []}]`
   zonder override per operatie, dus hetzelfde bearer-token geldt voor alle endpoints.
 
-## Toegang per rol — buiten Statistics is het 403
+## Toegang per rol — de Discount-endpoints zijn sinds 18-09-2026 open
 
-Een sleutel die alle vijf `Statistics`-endpoints mag lezen, mag daarmee **niet** alles. Gemeten op
-04-09-2026, opnieuw bevestigd:
+**Toegang tot deze API is per rol instelbaar, en dat is aan de sleutel te zien.** Op 04-09-2026 gaf
+een sleutel die alle vijf `Statistics`-endpoints las HTTP 403 op elk `Discount`-endpoint. Nadat de
+rechten op de sleutels waren verruimd, is dezelfde meting op 18-09-2026 herhaald, op beide
+omgevingen:
 
-| Endpoint | Uitkomst |
-|---|---|
-| `GET /api/v2/Discount/reasons` | **HTTP 403** |
-| `POST /api/v2/Discount/codes-basic-info` | **HTTP 403** |
-| `GET /api/v2/Discount/{discountCode}` | **HTTP 403** |
+| Endpoint | 04-09-2026 | 18-09-2026 |
+|---|---|---|
+| `GET /api/v2/Discount/reasons` | HTTP 403 | **HTTP 200** (beide omgevingen) |
+| `POST /api/v2/Discount/codes-basic-info` | HTTP 403 | **HTTP 200** (beide omgevingen) |
+| `GET /api/v2/Discount/{discountCode}` | HTTP 403 | **geen 403 meer**; het endpoint antwoordt inhoudelijk — zie hieronder |
 
-Foutvorm — nuttig, want het is de enige plek waar de foutvelden van het omhulsel zichtbaar worden:
+**Een rechtenwijziging is geen contractwijziging.** Alles buiten deze drie endpoints is deze ronde
+niet opnieuw afgetast en draagt de stand van 04-09-2026.
+
+De 403-vorm blijft het noemen waard, want het is de enige waarneming waarin de foutvelden van het
+omhulsel zichtbaar werden (gemeten 04-09-2026):
 
 ```json
 {"succeeded": false,
@@ -255,11 +278,148 @@ Foutvorm — nuttig, want het is de enige plek waar de foutvelden van het omhuls
  "isRedirect": false, "redirectUrl": null, "displayError": true, "errorCode": ""}
 ```
 
-**Dit is een vastgesteld feit, geen openstaande actie.** Of er rechten worden aangevraagd is een
-klantbesluit; voor het onderzoek zelf betekent het dat de kortingsdimensie (de tabel achter
-`discountCode`) niet via deze API bereikbaar is en dat `discountName` de enige beschrijvende
-kortingsinformatie in de feiten is. Toegang verschilt bij deze leverancier per rol — reken er niet
-op dat een sleutel die Statistics leest, ook referentiedata leest.
+**Wat dit betekent voor wie deze bron ontsluit:** toegang verschilt per rol en kan per sleutel
+worden verruimd. Een 403 op een endpoint is dus een vraag aan de leverancier en geen eigenschap van
+de API — maar toegang krijgen en er iets aan hebben zijn twee verschillende dingen, en dat is
+precies wat het volgende hoofdstuk uitwerkt.
+
+## Kortingsendpoints — gemeten 18-09-2026
+
+De drie endpoints onder de tag `Discount` zijn live aangeroepen op beide omgevingen. Ze gedragen
+zich onderling verschillend en geen van drieën is een verzameling die je kunt ophalen.
+
+### `GET /api/v2/Discount/reasons` — werkt, en is leeg
+
+- **HTTP 200** op beide omgevingen.
+- **Recordsleutel:** `discountReasons`.
+- **Omhulsel:** `succeeded`, `errorMessage`, `isRedirect`, `redirectUrl`, `displayError`,
+  `errorCode` — **geen** `offset` en **geen** `resultCount`, net als bij de twintig andere
+  verzamel-endpoints.
+- **Paginering:** geen. Het contract kent hier geen `offset`/`limit`; het is een enkele aanroep.
+- **Wijzigingsveld:** geen. Full load, altijd.
+- **Velden per record volgens het contract:** `id` en `reason`. **Niet waargenomen** — de array
+  kwam op beide omgevingen leeg terug.
+
+```json
+{
+  "discountReasons": [],
+  "succeeded": true,
+  "errorMessage": null,
+  "isRedirect": false,
+  "redirectUrl": null,
+  "displayError": false,
+  "errorCode": null
+}
+```
+
+> **Leeg is hier een echte waarneming en geen fout.** `succeeded: true`, geen foutmelding, op twee
+> omgevingen. Of er bij deze leverancier überhaupt kortingsredenen worden vastgelegd, is een vraag
+> aan de leverancier — zie [Vragen aan de leverancier](#vragen-aan-de-leverancier).
+
+### `POST /api/v2/Discount/codes-basic-info` — een opzoeker, geen bron
+
+**Dit endpoint somt niets op: je moet de codes die je wilt kennen zelf meesturen.** De request body
+draagt één veld, `discountCodes`, een array van strings. Een lege body geeft HTTP 500
+(`Value cannot be null. (Parameter 'source')`).
+
+- **HTTP 200** op beide omgevingen.
+- **Recordsleutel:** `discountCodes`.
+- **Omhulsel: geen.** Dit is de enige gemeten respons in deze API **zonder** `succeeded` en zonder
+  de foutvelden — het document bevat alleen de array. Wie hier op `succeeded` controleert, leest
+  een veld dat er niet is.
+- **Paginering:** geen. De omvang van het antwoord volgt uit de omvang van de vraag.
+- **Wijzigingsveld:** geen.
+- **Veldnamen per record (waargenomen in 221 records over twee omgevingen, één sleutelset):**
+  `discountCode`, `type`, `v2Type`, `version`, `validFrom`, `validTo`.
+- **Hier worden lege velden wél meegestuurd.** `type` kwam in alle gemeten records als `null`
+  terug. Dat is het tegenovergestelde van wat de `Statistics`-endpoints doen (zie
+  [De bron laat lege velden wég](#de-bron-laat-lege-velden-wég--lees-elke-veldenlijst-als-ondergrens))
+  — twee serializers binnen dezelfde API.
+- **Datumopmaak:** `validFrom` / `validTo` als ISO 8601 zonder tijdzone en zonder fractie
+  (`2026-07-01T00:00:00`, `2027-01-03T23:59:59`).
+- **`type`, `v2Type` en `version` zijn integer-enums** volgens het contract: `type` 0–3,
+  `v2Type` 0–4, `version` 0–3. Het contract publiceert **geen namen** bij die waarden — alleen de
+  getallen. Wat ze betekenen is **UNKNOWN — needs confirmation**.
+- **Geen naam, geen omschrijving.** Er is geen veld met de naam van de korting, en ook geen bedrag
+  of percentage.
+
+```json
+{
+  "discountCodes": [
+    {
+      "discountCode": "REDACTED",
+      "type": null,
+      "v2Type": 3,
+      "version": 2,
+      "validFrom": "2026-07-01T00:00:00",
+      "validTo": "2027-01-03T23:59:59"
+    }
+  ]
+}
+```
+
+**Gemeten gedrag dat je moet kennen voordat je hierop bouwt:**
+
+| Waarneming | Gemeten |
+|---|---|
+| Onbekende code in de vraag | valt stilzwijgend weg uit het antwoord — geen fout, geen lege rij |
+| Dezelfde code twee keer meegestuurd | komt één keer terug |
+| Code uit de ene omgeving, gevraagd op de andere | leeg antwoord. **Codes zijn omgevingsgebonden** |
+| 2069 codes in één aanroep | HTTP 200, alle 69 bekende codes terug. Een bovengrens is **niet** gevonden en blijft UNKNOWN |
+
+Dat eerste is de gevaarlijke: een antwoord met minder rijen dan de vraag is de normale gang van
+zaken, en niet te onderscheiden van een code die je verkeerd hebt meegestuurd.
+
+### `GET /api/v2/Discount/{discountCode}` — een controle aan de kassa, geen opzoekbron
+
+Dit endpoint is toegankelijk, maar heeft in **geen enkele** aanroep een 200 gegeven. Zes codes uit
+de verkochte tickets van twee omgevingen leverden alle zes:
+
+```json
+{"succeeded": false,
+ "errorMessage": "ErrorCode: 52 - Invalid DiscountCode supplied - Maximum number of orders exceeded for discount code",
+ "isRedirect": false, "redirectUrl": null, "displayError": true, "errorCode": "InvalidDiscountCode"}
+```
+
+Een code die niet bestaat geeft dezelfde HTTP 400 met een andere staart
+(`- GetDiscountInformationV2`), dus het endpoint onderscheidt de twee gevallen wél.
+
+**De uitleg, en die maakt het endpoint ongeschikt als bron:** dit is de controle die de
+verkoopstraat doet vóór een bestelling — mag deze code nu gebruikt worden. Een code die in
+`sold-tickets` staat, is per definitie al gebruikt; is hij eenmalig, dan is hij daarmee uitgeput en
+antwoordt dit endpoint niet meer over hem. **Precies de codes die je in een historisch feit
+tegenkomt, zijn de codes waar dit endpoint niets meer over zegt.**
+
+- **De succesvorm is dus UNKNOWN — niet waargenomen.** Volgens het contract zit de inhoud onder
+  `discount` naast hetzelfde omhulsel, met `name`, `description`, `remainingTickets`, `version`,
+  twee operator/bedrag-paren, en een **vijf lagen diep geneste** boom
+  `discountPartners` → `discountEvents` → `discountPerformances` → `discountPerformanceSections`
+  → `discountPriceTypes` → `discountPrices`.
+- **Het is een enkelvoudig record per aanroep**, geen verzameling: geen paginering, geen
+  wijzigingsveld, en één HTTP-aanroep per kortingscode.
+
+### Wat dit samen betekent — *voorgesteld, niet bevestigd*
+
+**Er is geen endpoint dat kortingscodes opsomt.** De twee endpoints die inhoud geven, vragen beide
+om de codes die je al hebt; het derde endpoint somt redenen op en is leeg. De enige plek waar
+kortingscodes vandaan komen is dus het feit zelf: `discountCode` in `sold-tickets`.
+
+Daaruit volgen drie dingen:
+
+1. **Geen losstaande kortingsentiteit die op zichzelf te laden is.** Geen van de drie endpoints
+   levert een verzameling die je met een datumvenster of een pagineerlus kunt uitlezen.
+2. **`codes-basic-info` is de enige kandidaat om de feiten te verrijken**, en dan als opzoeker op
+   de codes die in Bronze staan. Hij voegt `validFrom`, `validTo` en drie enum-waarden toe — geen
+   naam en geen bedrag. Of dat de moeite waard is, is een businessvraag: het antwoord hangt aan wat
+   men over kortingen wil kunnen zien.
+3. **`discountName` uit `sold-tickets` blijft de enige beschrijvende kortingsinformatie.** De
+   eerdere conclusie staat, maar op een andere grond dan in de vorige versie — niet omdat de deur
+   dicht zit, maar omdat er achter de open deur geen naam ligt.
+
+**De ophaalvorm die `codes-basic-info` zou vragen, kan het platform vandaag niet** — zie
+[Benodigde uitbreidingen aan general-notebooks](#benodigde-uitbreidingen-aan-general-notebooks).
+Beslis daarom eerst of de kortingsgeldigheid nodig is; pas dan is de vraag naar de uitbreiding een
+vraag met een doel.
 
 ## Verbinding
 
@@ -515,7 +675,7 @@ query-string.
 
 Het **contract** declareert er drie meer: `errorCode`, `errorMessage`, `redirectUrl`. Die
 verschijnen alleen bij een fout (zie de 403-respons onder
-[Toegang per rol](#toegang-per-rol--buiten-statistics-is-het-403)). Bij een geslaagde aanroep
+[Toegang per rol](#toegang-per-rol--de-discount-endpoints-zijn-sinds-18-09-2026-open)). Bij een geslaagde aanroep
 ontbreken ze — wat ons bij de belangrijkste vormbevinding van dit rapport brengt.
 
 ### De bron laat lege velden wég — lees elke veldenlijst als ondergrens
@@ -888,8 +1048,9 @@ alleen nog zinvol als je het risico van de eerste v2-productierun tot één enti
 
 ## Benodigde uitbreidingen aan general-notebooks
 
-**Geen.** Dat is een wijziging ten opzichte van de vorige versie, die vier hiaten opsomde. Alle
-vier zijn inmiddels dicht. Nagelopen op 04-09-2026 in de broncode, niet in de documentatie:
+**Voor de vijf `Statistics`-entiteiten: geen.** Dat is een wijziging ten opzichte van de versie van
+28-08-2026, die vier hiaten opsomde. Alle vier zijn inmiddels dicht. Nagelopen op 04-09-2026 in de
+broncode, niet in de documentatie:
 
 | Was gemeld als hiaat | Stand nu |
 |---|---|
@@ -904,6 +1065,15 @@ Verder al ondersteund en dus niet te bouwen: `offset`- en `chunk_offset`-paginer
 `resultCount < PageSize`), datum-chunking via `LoopChunks.ChunkType: days`, markerberekening uit
 chunk-vensters, en herhaalpogingen bij `401`, `409`, `429` en `5xx` inclusief respect voor
 `Retry-After`.
+
+**Één gat, en het speelt alleen bij de kortingsopzoeker (18-09-2026).**
+`POST /api/v2/Discount/codes-basic-info` vraagt een ophaalvorm die de generieke ingestie niet
+kent: een **lijst waarden uit een andere entiteit in de request body**. De lus die per waarde van
+een andere entiteit ophaalt, zet die waarde uitsluitend in het **URL-pad** en doet **één aanroep
+per waarde**; een verzameling waarden in één body samenvoegen kan geen enkele strategie, en het
+statische body-sjabloon staat geen waarden uit data toe. Gevolg voor deze bron: de
+kortingsgeldigheid is vandaag niet te laden. `GET /api/v2/Discount/reasons` past wél binnen de
+bestaande mogelijkheden (enkele aanroep, full load), maar is leeg.
 
 **Eén aandachtspunt zonder user story:** `_build_date_params()` formatteert de datumgrenzen met één
 `Format`-string. Voor de request-kant is dat genoeg (`%Y-%m-%dT%H:%M:%S` werkt). Voor het **lezen**
@@ -929,9 +1099,17 @@ Silver-transformatie, niet de ingestie, en hoort dus bij config-builder.
 5. **Uitfaseringsdatum van v1 — UNKNOWN.** Niet in de spec, geen publieke documentatie, geen
    changelog. Alleen de leverancier weet dit.
 6. **Bevat `apiv2test` bruikbare data voor validatie? — UNKNOWN, ongeverifieerd sinds 2026-07-17.**
-7. **Kortingsreferentiedata — vastgesteld ontoegankelijk, geen UNKNOWN.** Alle drie de
-   `Discount`-endpoints geven HTTP 403 voor een Statistics-sleutel. Zie
-   [Toegang per rol](#toegang-per-rol--buiten-statistics-is-het-403).
+7. **Kortingsreferentiedata — toegankelijk sinds 18-09-2026, maar geen opsombare bron.** De drie
+   `Discount`-endpoints geven geen 403 meer. Wat er niet is, is een endpoint dat kortingscodes
+   *opsomt*: twee endpoints vragen om codes die je al hebt en het derde (`reasons`) gaf op beide
+   omgevingen een lege lijst. Zie [Kortingsendpoints](#kortingsendpoints--gemeten-18-09-2026).
+   Drie losse onbekenden binnen dit punt:
+   - **Betekenis van `type`, `v2Type` en `version` — UNKNOWN.** Integer-enums zonder namen in
+     het contract.
+   - **Zijn er bij deze leverancier kortingsredenen vastgelegd? — UNKNOWN.** `Discount/reasons`
+     antwoordt `succeeded: true` met een lege lijst op beide omgevingen.
+   - **Maximale omvang van één `codes-basic-info`-vraag — UNKNOWN.** 2069 codes in één
+     aanroep werkten; een bovengrens is niet gevonden.
 8. **`payments` op `baskets` — vorm ongeverifieerd.** Het staat in het contract maar kwam in 1588
    records niet voor; met `null`-weglating betekent dat "niet gevuld in deze steekproef", niet
    "bestaat niet". De geneste vorm ervan is dus niet waargenomen.
@@ -960,6 +1138,17 @@ Silver-transformatie, niet de ingestie, en hoort dus bij config-builder.
    `SoldTicketsInfo` op v2. Is daar een vervanger voor, of vervallen ze bewust?
 7. **Testomgeving.** Bevat `apiv2test.ticketcounter.eu` representatieve data, zodat de migratie daar
    te valideren is voordat er op productie wordt geschakeld?
+8. **Kortingscodes opsommen.** Bestaat er een endpoint dat de kortingscodes of -acties van een
+   omgeving *opsomt*? De drie `Discount`-endpoints vragen om codes die je al kent, of geven een
+   lege lijst.
+9. **`Discount/reasons` is leeg.** Het endpoint antwoordt `succeeded: true` met een lege lijst op
+   beide omgevingen. Worden kortingsredenen bij ons niet vastgelegd, of hangt de lijst aan iets
+   anders dan de sleutel waarmee wij lezen?
+10. **Enum-waarden.** Wat betekenen `type` (0–3), `v2Type` (0–4) en `version` (0–3) op
+   `codes-basic-info`? Het contract publiceert alleen de getallen.
+11. **Naam van de korting.** `codes-basic-info` geeft geen naam en geen omschrijving, en de
+   detailaanroep antwoordt niet meer over een uitgeputte code. Is de naam achter `discountName` in
+   `sold-tickets` elders op te vragen voor codes die al zijn gebruikt?
 
 ## Verzamel-endpoints v2 — dimensie- en referentiebronnen
 
@@ -971,12 +1160,16 @@ Silver-transformatie, niet de ingestie, en hoort dus bij config-builder.
 
 - **Scope.** De vijf `Statistics`-feiten blijven de enige bevestigde ingestie-scope. Deel A is een
   lijst **voorstellen**, niet bevestigd.
-- **Bewijsbasis:** het gepubliceerde OpenAPI-contract, opgehaald 04-09-2026. Er zijn hiervan **geen
-  responses opgehaald** — de enige drie die live zijn geprobeerd (`Discount/*`) gaven 403.
+- **Bewijsbasis:** het gepubliceerde OpenAPI-contract, opgehaald 04-09-2026. Van twintig van de 21
+  zijn **geen responses opgehaald**. De uitzondering is `Discount/reasons`, dat op 18-09-2026 wel
+  live is aangeroepen.
 
 **Correctie 04-09-2026:** `GET /api/v2/DiscountReasons` bestaat niet meer. Het pad is nu
-`GET /api/v2/Discount/reasons`, en het geeft HTTP 403. De overige twintig paden uit de vorige versie
-bestaan alle nog, ongewijzigd.
+`GET /api/v2/Discount/reasons`. De overige twintig paden uit de vorige versie bestaan alle nog,
+ongewijzigd.
+
+**Correctie 18-09-2026:** dat pad geeft geen HTTP 403 meer maar HTTP 200 met een lege lijst, op
+beide omgevingen. Zie [Kortingsendpoints](#kortingsendpoints--gemeten-18-09-2026).
 
 ### Vijf eigenschappen die voor alle 21 gelden
 
@@ -1003,7 +1196,7 @@ bestaan alle nog, ongewijzigd.
 | `GET /api/v2/Products/pricetypeproducts` | `prices` | `priceKey` → `sold_tickets` + `ticket_scans` | Nee |
 | `GET /api/v2/Payments/payment-types` | `paymentTypes` | Labelkoppeling op betaalmethode | Nee |
 | `GET /api/v2/PredefinedReasons` | `predefinedReasons` | Referentie (annulerings-/kortingsredenen); geen directe FK | Nee |
-| `GET /api/v2/Discount/reasons` | *(403 — niet waargenomen)* | Kortingsredenen | **Niet toegankelijk** |
+| `GET /api/v2/Discount/reasons` | `discountReasons` | Kortingsredenen; geen FK naar de feiten waargenomen | Nee — en **leeg** op beide omgevingen (18-09-2026) |
 | `GET /api/v2/TicketBundles` | `ticketBundles` | Dunne samenvatting; geen FK in de feiten | Nee |
 | `GET /api/v2/Reservations/possible-statuses` | `statuses` | Statische enum-decode; geen statusveld in de feiten | Nee |
 | `GET /api/v2/Capacities/sold` | `soldCapacities` | Aggregaat per `priceKey` + datum; geen lijst-modus | Nee |
